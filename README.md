@@ -1,4 +1,5 @@
 # s3o-Blender-plugins-2022
+![Header](docs/0.png)
 Blender s3o scene/mesh exporter for the SpringRTS engine, compatible with Blender 3.x
 
 ## What is s3o?
