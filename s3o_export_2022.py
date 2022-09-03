@@ -1,0 +1,626 @@
+# import math
+# from mathutils import Vector
+# import bmesh
+# import sys
+from math import radians
+
+import bmesh
+import bpy
+import mathutils
+import time
+from bpy.props import BoolProperty, StringProperty  # , EnumProperty
+import os
+import struct
+
+# from struct import calcsize, unpack
+
+# import BPyImage ==> bpy.ops.image
+# import BPyMessages ==> bpy.msgbus ?
+# ImportHelper is a helper class, defines filename and invoke() function which calls the file selector
+from bpy_extras.io_utils import ExportHelper, orientation_helper, axis_conversion
+
+# from Blender import Mesh, Object, Material, Image, Texture, Lamp, Mathutils, Window
+# from Blender.Mathutils import Vector
+
+bl_info = {
+	"name": "Export Spring S3O Object (.s3o)",
+	"author": "Jez Kabanov and Breno 'MaDDoX' Azevedo <jlcercos@gmail.com> and <maddox.br@gmail.com>",
+	"version": (0, 6, 0),
+	"blender": (3, 10, 0),
+	"location": "File > Export > Spring S3O Object (.s3o)",
+	"description": "Exports a file in the Spring S3O format",
+	"warning": "",
+	"wiki_url": "https://springrts.com/wiki/About_s3o",
+	"tracker_url": "http://springrts.com",
+	"support": "COMMUNITY",
+	"category": "Import-Export",
+}
+
+try:
+	os.SEEK_SET
+except AttributeError:
+	os.SEEK_SET, os.SEEK_CUR, os.SEEK_END = range(3)
+
+
+def folder_root(folder, name):
+	"""Case-insensitive recursive folder root extraction.
+	This function returns the parent path which contains the desired subfolder.
+	For instance, providing the path:
+	/home/user/.spring/.spring/games/s44.sdd/objects3d/GER/
+	and the target folder name "objects3d", it returns:
+	/home/user/.spring/.spring/games/s44.sdd/
+
+	Parameters
+	==========
+	folder : string
+		Folder where the parent should be looked for
+	name : string
+		Name of the file/folder which root is desired (case will be ignored)
+
+	Returns
+	=======
+	root : string
+		The folder path (case-sensitive), None if it is not possible to find the
+		root folder in the provided path.
+	"""
+	index = folder.lower().find(name.lower())
+	if index == -1:
+		return None
+	return folder[:index]
+
+
+def find_in_folder(folder, name):
+	"""Case-insensitive file/folder search tool
+	Parameters
+	==========
+	folder : string
+		Folder where the file should be looked for
+	name : string
+		Name of the file (case will be ignored)
+
+	Returns
+	=======
+	filename : string
+		The file name (case-sensitive), None if the file cannot be found.
+	"""
+	for filename in os.listdir(folder):
+		if filename.lower() == name.lower():
+			return filename
+	return None
+
+
+def read_string(file, offset):
+	file.seek(offset, os.SEEK_SET)
+	string = ''
+	c = file.read(1)
+	while c != '' and c != '\0':
+		string += c
+		c = file.read(1)
+
+	return string
+
+
+class s3o_header(object):
+	binary_format = '<12sI5f4I'  # .encode()
+	magic = b'Spring unit'  # char [12] "Spring unit\0"
+	version = 0  # uint = 0
+	radius = 0.0  # float: radius of collision sphere
+	height = 0.0  # float: height of whole object
+	midx = 0.0  # float offset from origin
+	midy = 0.0  #
+	midz = 0.0  #
+	rootPieceOffset = 0  # offset of root piece
+	collisionDataOffset = 0  # offset of collision data, 0 = no data
+	texture1Offset = 0  # offset to filename of 1st texture
+	texture2Offset = 0  # offset to filename of 2nd texture
+
+	def save(self, file):
+		s = struct.pack(self.binary_format,
+						self.magic,
+						self.version,
+						self.radius,
+						self.height,
+						self.midx,
+						self.midy,
+						self.midz,
+						self.rootPieceOffset,
+						self.collisionDataOffset,
+						self.texture1Offset,
+						self.texture2Offset
+						)
+		print(s)
+		file.write(s)
+
+
+class s3o_piece(object):
+	binary_format = "<10I3f"
+
+	name = ''
+	verts = []
+	polygons = []
+	parent = ''
+	children = []
+
+	nameOffset = 0  # uint
+	numChildren = 0  # uint
+	childrenOffset = 0  # uint
+	numVerts = 0  # uint
+	vertsOffset = 0  # uint
+	vertType = 0  # uint
+	primitiveType = 0  # 0 = tri, 1 = tristrips, 2 = quads
+	vertTableSize = 0  # number of indexes in vert table
+	vertTableOffset = 0
+	collisionDataOffset = 0
+	xoffset = 0.0
+	yoffset = 0.0
+	zoffset = 0.0
+
+	def write_primitives(self, file):
+		# check if they're all quads, if so we can save it as quads rather than tris
+		allquads = True
+		for f in self.polygons:
+			if len(f) != 4:
+				allquads = False
+				break
+
+		if allquads:
+			self.primitiveType = 2
+			for f in self.polygons:
+				data = struct.pack("<4I", f[0], f[1], f[2], f[3])
+				file.write(data)
+		else:
+			self.primitiveType = 0
+			for f in self.polygons:
+				data = struct.pack("<3I", f[0], f[1], f[2])
+				file.write(data)
+
+	def save(self, file):
+		print("saving object [" + self.name + "]")
+		startpos = file.tell()
+		# seek forward the size of a piece header
+		file.seek(struct.calcsize(self.binary_format), os.SEEK_CUR)
+		# write name
+		self.nameOffset = file.tell()
+		file.write(self.name.encode() + b"\0")  # # self.name -- TODO: wip - encode("UTF-8")
+		# (self, s: Union[bytes, bytearray])
+
+		# write vert table
+		self.vertTableOffset = file.tell()
+		self.write_primitives(file)
+		if self.primitiveType == 2:
+			self.vertTableSize = len(self.polygons) * 4
+		else:
+			self.vertTableSize = len(self.polygons) * 3
+
+		# write verts
+		self.vertsOffset = file.tell()
+		for v in self.verts:
+			v.save(file)
+
+		self.numVerts = len(self.verts)
+
+		self.numChildren = len(self.children)
+		print("saving " + str(self.numChildren) + " children")
+		childOffsetList = []
+		# save children
+		for c in self.children:
+			childOffsetList.append(file.tell())
+			c.save(file)
+		# write child offset list
+		self.childrenOffset = file.tell()
+		for c in childOffsetList:
+			data = struct.pack("<I", c)
+			file.write(data)
+
+		# record end pos
+		endpos = file.tell()
+
+		# jump back to the beginning
+		file.seek(startpos, os.SEEK_SET)
+
+		# write piece header
+		data = struct.pack(self.binary_format,
+						   self.nameOffset,
+						   self.numChildren,
+						   self.childrenOffset,
+						   self.numVerts,
+						   self.vertsOffset,
+						   self.vertType,
+						   self.primitiveType,
+						   self.vertTableSize,
+						   self.vertTableOffset,
+						   self.collisionDataOffset,
+						   self.xoffset,
+						   self.yoffset,
+						   self.zoffset)
+		file.write(data)
+
+		# jump back to the end ready for the next piece
+		file.seek(endpos, os.SEEK_SET)
+		print("done [" + self.name + "]")
+
+	def get_verts(self):
+		tmp_verts = []
+		for i in range(0, len(self.verts)):
+			tmp_verts.append([self.verts[i].xpos, self.verts[i].ypos, self.verts[i].zpos])
+		return tmp_verts
+
+
+class s3o_vert(object):
+	binary_format = "<8f"
+	xpos = 0.0
+	ypos = 0.0
+	zpos = 0.0
+	xnormal = 0.0
+	ynormal = 0.0
+	znormal = 0.0
+	texu = 0.0
+	texv = 0.0
+
+	def save(self, file):
+		data = struct.pack(self.binary_format,
+						   self.xpos,
+						   self.ypos,
+						   self.zpos,
+						   self.xnormal,
+						   self.ynormal,
+						   self.znormal,
+						   self.texu,
+						   self.texv)
+		file.write(data)
+
+
+def asciiz(s):
+	n = 0
+	while ord(s[n]) != 0:
+		n = n + 1
+	return s[0:n]
+
+
+def save_s3o_file(s3o_filename,
+                  context,
+                  use_selection=False,
+                  use_mesh_modifiers=False,
+                  use_triangles=False,
+				  #global_matrix=None,
+				  #use_global_matrix=False,
+                  #world_space = False,
+                  #rot_x90=False,
+                  ):   # # use_selection=True, # global_matrix=None,
+	print ("selection "+str(use_selection)
+	       +" meshmods "+str(use_mesh_modifiers)
+	       +" tris "+str(use_triangles)
+	       #+" globmatrix "+str(use_global_matrix)
+	       )
+
+	#if global_matrix is None:
+		#global_matrix = mathutils.Matrix()
+
+	#basename = os.path.basename(s3o_filename)
+	objdir = os.path.dirname(s3o_filename)
+	rootdir = folder_root(objdir, "objects3d")
+	texsdir = ""
+	# TODO: Add support for textures dir (texsdir)
+	if rootdir is None:
+		texsdir = objdir
+	else:
+		texsdir = os.path.join(rootdir, find_in_folder(rootdir, 'unittextures'))
+
+	######
+
+	header = s3o_header()
+
+	scn = context.scene  # Blender.Scene.GetCurrent()
+
+	# get the texture name to save into the header
+	# # material = Material.Get('SpringMat')
+	# # textures = material.getTextures()
+	# # We're just assigning default texture names now. Easy to change in UpSpring.
+	header.texture1 = "texture1"  # os.path.basename(textures[0].tex.image.getFilename())
+	header.texture2 = "texture2"  # os.path.basename(textures[1].tex.image.getFilename())
+	# print("texture1: " + header.texture1)
+	# print("texture2: " + header.texture2)
+
+	foundRadius = False
+	foundHeight = False
+
+	# # Default Values (if no 'SpringRadius' or 'SpringHeight' objects are found)
+	header.radius = 50
+	header.midx = 0
+	header.midy = 0
+	header.midz = 0
+
+	# get the radius from the SpringRadius empty sphere size
+	pieces = []
+	children = {}
+	for obj in bpy.data.objects:  # # scn.objects
+		if 'SpringRadius' in obj.name:  # getName()
+			header.radius = obj.empty_display_size # dimensions[0]  # getSize()
+			header.midx = -obj.location[0]  # getLocation()
+			header.midy = obj.location[2]
+			header.midz = obj.location[1]
+			foundRadius = True
+			continue
+		if 'SpringHeight' in obj.name:
+			header.height = obj.location[2]
+			foundHeight = True
+			continue
+
+		if use_selection and obj != bpy.context.object:
+			continue
+
+		# #TODO: Remove. Brute Force test
+		# origin = bpy.data.objects['SceneRoot']
+		# origin.rotation_euler[0] = radians(-90)     # ZXY rotation order
+		# origin.rotation_euler[1] = radians(180)     # ZXY rotation order
+
+		piece = s3o_piece()
+		#########################################
+		# go through all mesh objects and empties, then convert them to s3o_pieces, set origins (as offsets)
+		#########################################
+		if obj.type == 'EMPTY' or obj.type == 'MESH':  # or: in {'MESH'} etc
+			print("Exporting [" + obj.name + "]")
+
+			piece.name = obj.name
+			piece.verts = []
+			piece.polygons = []
+			#objLoc = obj.matrix_world @ obj.location
+			piece.xoffset = -obj.location[0] #objLoc[0]
+			piece.yoffset = obj.location[2] #objLoc[1]
+			piece.zoffset = obj.location[1] #objLoc[2]
+			piece.primitiveType = 0
+			piece.vertType = 0
+			piece.numVerts = 0
+			piece.vertTableSize = 0
+			if obj.parent:  # getParent()
+				piece.parent = obj.parent.name
+				if piece.parent not in children:
+					children[piece.parent] = []
+				children[piece.parent].append(piece)
+				print("Child of " + piece.parent)
+			else:
+				piece.parent = ''
+
+		#########################################
+		# For 3D meshes, export the geometry
+		#########################################
+		if obj.type == 'MESH':
+			mesh = obj.data
+			mesh.update()
+			# # # Apply Matrix transformation to object
+			# if obj.name=="SceneRoot":
+			#  if use_global_matrix:
+			#   obj.data.transform(global_matrix)
+
+			# # perform mesh modifications if they were requested
+			if use_mesh_modifiers:
+				for i in range(0, len(obj.modifiers)):
+					name = obj.modifiers[i].name
+					bpy.ops.object.modifier_apply(modifier=name)
+			if use_triangles:
+				# First make the target object active, then switch to Edit mode
+				bpy.context.view_layer.objects.active = obj
+				bpy.ops.object.mode_set(mode='EDIT')
+				# bpy.ops.mesh.select_all(action='SELECT')
+				# bpy.ops.mesh.quads_convert_to_tris()
+				# bpy.ops.object.mode_set(mode='OBJECT')
+				bm = bmesh.from_edit_mesh(mesh)
+				bmesh.ops.triangulate(bm, faces=bm.faces[:], quad_method='BEAUTY', ngon_method='BEAUTY')
+				bmesh.update_edit_mesh(mesh) #, True
+				bpy.ops.object.mode_set(mode='OBJECT')
+
+			# piece.verts = []
+			# piece.polygons = []
+			if not len(obj.data.uv_layers):
+				print("UV coordinates not found! Did you unwrap this object?") # Auto-unwrapping.")
+				# Auto-unwrap to avoid errors
+				# bpy.ops.object.mode_set(mode='OBJECT')
+				# bpy.ops.uv.smart_project()
+			else:
+				uv_layer = mesh.uv_layers.active.data
+
+				print ("offsets: "+str(piece.xoffset)+", "+str(piece.yoffset)+", "+str(piece.zoffset))
+				objLoc = obj.matrix_world.decompose()  # obj.matrix_world @ obj.location
+				print ("objLoc: "+str(objLoc[0][0])+", "+str(objLoc[1][0])+", "+str(objLoc[2][0]))
+				for v in mesh.vertices:  # # mesh.verts:
+					#v_co = mathutils.Vector((v.co.x + objLoc[0][0], v.co.y + objLoc[2][0], v.co.z + objLoc[1][0]))
+					#v_co = obj.matrix_world @ v_co      # apply world rotation to vertex pos
+					vert = s3o_vert()
+					vert.xpos = -v.co.x # v_co.x # + objLoc[0][0]
+					vert.ypos = v.co.z # v_co.y # + objLoc[1][0]
+					vert.zpos = v.co.y # v_co.z # + objLoc[2][0] # piece.zoffset
+					vert.xnormal = v.normal.x  # # v.no.x
+					vert.ynormal = v.normal.y
+					vert.znormal = v.normal.z
+					piece.verts.append(vert)
+				print("Exported " + str(len(piece.verts)) + " verts")
+				for poly in mesh.polygons:  # # mesh.faces
+					face = []
+					# i = 0
+					for loop_index in range(poly.loop_start, poly.loop_start + poly.loop_total):
+						vIndex = mesh.loops[loop_index].vertex_index
+						face.append(vIndex)
+						# get uvs
+						piece.verts[vIndex].texu = uv_layer[loop_index].uv.x  # poly.uv[i].x
+						piece.verts[vIndex].texv = uv_layer[loop_index].uv.y  # poly.uv[i].y
+						# i += 1
+					piece.polygons.append(face)
+				piece.numVerts = len(piece.verts)
+				piece.vertTableSize = len(piece.polygons)
+
+		# Finally, append the piece to the list of pieces
+		pieces.append(piece)
+
+	# # No longer aborts if these objects weren't found.
+	if not foundRadius:
+		print("Could not find SpringRadius object. Using Default Values.")
+	if not foundHeight:
+		print("Could not find SpringHeight object. Using Default Value.")
+
+	# # find the piece with no parent and set it as the Root
+	rootPiece = None
+	for p in pieces:
+		if p.name in children:
+			p.children = children[p.name]
+		if p.parent == '' and ('SpringRadius' not in p.name) and ('SpringHeight' not in p.name):
+			rootPiece = p
+			print("Root = [" + rootPiece.name + "]")
+			# # Apply Matrix transformation to object
+			#if use_global_matrix:
+				#obj.data.transform(global_matrix)
+				#obj.matrix_world = global_matrix
+
+	if rootPiece is None:
+		print("No root object found. Aborting")
+		return
+
+	try:
+		file = open(s3o_filename, "wb")
+	except IOError:
+		print("Cannot open " + s3o_filename + " for writing")
+		return
+
+	# skip forward the size of the header, we'll come back later to write the header
+	file.seek(struct.calcsize(header.binary_format), os.SEEK_CUR)
+
+	header.rootPieceOffset = file.tell()
+	rootPiece.save(file)
+
+	# save the texture names and write their offsets in the header
+	if header.texture1:
+		header.texture1Offset = file.tell()
+		file.write(header.texture1.encode() + b'\0')  # #
+	if header.texture2:
+		header.texture2Offset = file.tell()
+		file.write(header.texture2.encode() + b'\0')  # #
+
+	# jump back to the beginning to save the header
+	file.seek(0, os.SEEK_SET)
+	header.save(file)
+	file.close()
+	print("Ding! Export Complete.")
+	# # Window.WaitCursor(0)
+	return
+
+
+# # OLD: Window.FileSelector(save_s3o_file, 'Export a Spring S3O', '*.s3o')
+# # ExportHelper is a helper class, defines filename and invoke() function which calls the file selector
+
+#@orientation_helper(axis_forward='Z', axis_up='Y')
+class ExportS3O(bpy.types.Operator, ExportHelper):
+	"""Export a file in the Spring S3O format (.s3o)"""
+	bl_idname = "export_scene.s3o"  # important since it's how bpy.ops.export_scene.osm is constructed
+	bl_label = "Export Spring S3O"
+	bl_options = {"UNDO"}
+
+	# ExportHelper mixin class uses this
+	filename_ext = ".s3o"
+
+	filter_glob: StringProperty(
+		default="*.s3o",
+		options={"HIDDEN"},
+	)
+
+	use_selection: BoolProperty(
+		name="Selection Only",
+		description="Export selected objects only",
+		default=False,
+	)
+
+	use_mesh_modifiers: BoolProperty(
+		name="Apply Modifiers",
+		description="Applies the Modifiers",
+		default=True,
+	)
+
+	use_triangles: BoolProperty(            # convert_to_tris
+		name="Convert quads to triangles",
+		description="Convert the mesh's quads and n-gons to triangles",
+		default=True
+	)
+
+	# rot_x90 = BoolProperty(
+	# 	name="Convert to Y-up",
+	# 	description="Rotate 90 degrees around X to convert to y-up",
+	# 	default=False
+	# )
+
+	# # use_space_transform?
+	# world_space = BoolProperty(
+	# 	name="Export into World space",
+	# 	description="Transform the Vertex coordinates into Worldspace",
+	# 	default=False
+	# )
+
+	def execute(self, context):
+		# Convert all properties into a dictionary, to be passed by ** (unpack)
+		# keywords = self.as_keywords(ignore=("axis_forward",
+		# 									"axis_up",
+		# 									"filter_glob",
+		# 									))
+		# global_matrix = axis_conversion(to_forward=self.axis_forward,
+		# 								to_up=self.axis_up,
+		# 								).to_4x4()
+		# keywords["global_matrix"] = global_matrix
+		# keywords["use_global_matrix"] = self.axis_forward != 'Y' or self.axis_up != 'Z'
+
+		start_time = time.time()
+		# print('\nExport starts')
+
+		# setting active object if there is no active object
+		if context.mode != "OBJECT":
+			# if there is no object in the scene, only "OBJECT" mode is provided
+			if not context.scene.objects.active:
+				context.scene.objects.active = context.scene.objects[0]
+			bpy.ops.object.mode_set(mode="OBJECT")
+		bpy.ops.object.select_all(action="DESELECT")
+
+		# # ====== Actually export the s3o file
+		save_s3o_file( self.filepath, context,
+		               self.use_selection,
+		               self.use_mesh_modifiers,
+		               self.use_triangles,
+		               # global_matrix,
+		               # keywords["use_global_matrix"],
+		               ) ## , **keywords)
+
+		bpy.ops.object.select_all(action="DESELECT")
+
+		print('finished export in %s seconds' % (time.time() - start_time))
+		return {"FINISHED"}
+
+	def invoke(self, context, event):
+		wm = context.window_manager
+
+		# File selector
+		wm.fileselect_add(self)  # will run self.execute()
+		return {'RUNNING_MODAL'}
+
+
+# Only needed if you want to add into a dynamic menu
+def menu_func_export(self, context):
+	self.layout.operator(ExportS3O.bl_idname, text="Spring Object (.s3o)")
+
+
+def register():
+	bpy.utils.register_class(ExportS3O)
+	try:
+		bpy.types.TOPBAR_MT_file_export.append(menu_func_export)
+	except AttributeError:
+		# Blender < 2.80
+		bpy.types.INFO_MT_file_export.append(menu_func_export)
+
+
+def unregister():
+	bpy.utils.unregister_class(ExportS3O)
+	try:
+		bpy.types.TOPBAR_MT_file_export.remove(menu_func_export)
+	except AttributeError:
+		# Blender < 2.80
+		bpy.types.INFO_MT_file_export.remove(menu_func_export)
+
+
+# This allows you to run the script directly from blenders text editor
+# to test the addon without having to install it.
+if __name__ == "__main__":
+	register()
