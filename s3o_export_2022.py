@@ -332,7 +332,7 @@ def save_s3o_file(s3o_filename,
 
 	# get the radius from the SpringRadius empty sphere size
 	pieces = []
-	children = {}
+	children = {}   # dictionary
 	for obj in bpy.data.objects:  # # scn.objects
 		if 'SpringRadius' in obj.name:  # getName()
 			header.radius = obj.empty_display_size # dimensions[0]  # getSize()
@@ -365,18 +365,20 @@ def save_s3o_file(s3o_filename,
 			piece.verts = []
 			piece.polygons = []
 			#objLoc = obj.matrix_world @ obj.location
-			piece.xoffset = -obj.location[0] #objLoc[0]
-			piece.yoffset = obj.location[2] #objLoc[1]
-			piece.zoffset = obj.location[1] #objLoc[2]
+			localPos = obj.matrix_local #local x = [0][3], y = [1][3], z = [2][3]
+			piece.xoffset = -localPos[0][3] # -obj.location[0] #objLoc[0]
+			piece.yoffset = localPos[2][3] # obj.location[2] #objLoc[1]
+			piece.zoffset = localPos[1][3] # obj.location[1] #objLoc[2]
 			piece.primitiveType = 0
 			piece.vertType = 0
 			piece.numVerts = 0
 			piece.vertTableSize = 0
 			if obj.parent:  # getParent()
 				piece.parent = obj.parent.name
+				# initialize the parent piece into the children dict, if needed
 				if piece.parent not in children:
 					children[piece.parent] = []
-				children[piece.parent].append(piece)
+				children[piece.parent].append(piece)    # then append this piece
 				print("Child of " + piece.parent)
 			else:
 				piece.parent = ''
