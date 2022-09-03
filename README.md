@@ -29,7 +29,7 @@ Although SpringRTS does support .dae and other open 3d formats, the best object 
   
 ![Export](docs/4.png)
 
-7. Finally, click on the "Export Spring S3O" button to generate and save the file. 
+7. Finally, enter a name and click on the "Export Spring S3O" button to generate and save the file. 
 
 ## s3o object radius and height:
 These s3o specific parameters may be defined in the Blender scene with two empty objects. Their names must be (or include) "SpringHeight" and "SpringRadius", with the first being set to "Arrows" display mode and the second to sphere display mode. The vertical (z in Blender) position of the "SpringHeight" object will define the object height, and should always be above the top-most point of the mesh - the Arrows size there is disregarded, set it as you wish. As for the "SpringRadius" empty, its position and display size will define the center and radius of the outer collision sphere to be assigned to the model in-game.
