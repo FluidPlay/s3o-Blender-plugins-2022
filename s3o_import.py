@@ -305,9 +305,8 @@ class s3o_piece(object):
             bm.to_mesh(self.mesh)
             self.ob = bpy.data.objects.new(self.name, self.mesh)
             try:
-                #collection = bpy.data.collections.new(self.name)
-                collection = bpy.context.view_layer.active_layer_collection.collection
-                #bpy.context.scene.collection.children.link(collection)
+                collection = bpy.data.collections.new(self.name)
+                bpy.context.scene.collection.children.link(collection)
                 collection.objects.link(self.ob)
             except AttributeError:
                 # Blender < 2.80
@@ -323,8 +322,8 @@ class s3o_piece(object):
             except AttributeError:
                 # Blender < 2.80
                 bpy.context.scene.objects.active = self.ob                
+            bpy.ops.object.shade_smooth()
             if bpy.context.object is not None: # NoneType objects can get here recently.
-                #bpy.ops.object.shade_smooth()
                 if hasattr(bpy.context.object.data, "use_auto_smooth"):
                     bpy.context.object.data.use_auto_smooth = False
                     # bpy.context.object.data.auto_smooth_angle = 0.785398 # 45 degrees, better than 30 for low poly stuff.
