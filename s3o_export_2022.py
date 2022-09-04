@@ -308,7 +308,7 @@ def asciiz(s):
 		n = n + 1
 	return s[0:n]
 
-def ProcessPiece(piece, use_mesh_modifiers, use_triangles):  # Empty or Mesh, will recurse through children
+def ProcessPiece(piece):  # Empty or Mesh, will recurse through children
 	obj = piece.mesh
 
 	if obj.type == 'EMPTY' or obj.type == 'MESH':  # or: in {'MESH'} etc
@@ -331,19 +331,19 @@ def ProcessPiece(piece, use_mesh_modifiers, use_triangles):  # Empty or Mesh, wi
 	if obj.type == 'MESH':
 		mesh = obj.data
 		# # perform mesh modifications if they were requested
-		if use_mesh_modifiers:
-			bpy.ops.object.mode_set(mode='OBJECT')
-			for i in range(0, len(obj.modifiers)):
-				name = obj.modifiers[i].name
-				bpy.ops.object.modifier_apply(modifier=name)
-		if use_triangles:
-			# First make the target object active, then switch to Edit mode
-			bpy.context.view_layer.objects.active = obj
-			bpy.ops.object.mode_set(mode='EDIT')
-			bm = bmesh.from_edit_mesh(mesh)
-			bmesh.ops.triangulate(bm, faces=bm.faces[:], quad_method='BEAUTY', ngon_method='BEAUTY')
-			bmesh.update_edit_mesh(mesh) #, True
-			bpy.ops.object.mode_set(mode='OBJECT')
+		# if use_mesh_modifiers:
+		# 	bpy.ops.object.mode_set(mode='OBJECT')
+		# 	for i in range(0, len(obj.modifiers)):
+		# 		name = obj.modifiers[i].name
+		# 		bpy.ops.object.modifier_apply(modifier=name)
+		# if use_triangles:
+		# 	# First make the target object active, then switch to Edit mode
+		# 	bpy.context.view_layer.objects.active = obj
+		# 	bpy.ops.object.mode_set(mode='EDIT')
+		# 	bm = bmesh.from_edit_mesh(mesh)
+		# 	bmesh.ops.triangulate(bm, faces=bm.faces[:], quad_method='BEAUTY', ngon_method='BEAUTY')
+		# 	bmesh.update_edit_mesh(mesh) #, True
+		# 	bpy.ops.object.mode_set(mode='OBJECT')
 
 		mesh.update()
 
@@ -388,9 +388,24 @@ def ProcessPiece(piece, use_mesh_modifiers, use_triangles):  # Empty or Mesh, wi
 
 	# Recurse through children |=> piece.children[idx] = [piece,...]
 	for idx, childPiece in enumerate(piece.children):
-		piece.children[idx] = ProcessPiece(childPiece, use_mesh_modifiers, use_triangles)
+		piece.children[idx] = ProcessPiece(childPiece)
 
 	return piece
+
+
+def apply_modifiers(obj):
+	ctx = bpy.context.copy()
+	ctx['object'] = obj
+	for _, m in enumerate(obj.modifiers):
+		try:
+			ctx['modifier'] = m
+			bpy.ops.object.modifier_apply(ctx, modifier=m.name)
+		except RuntimeError:
+			print(f"Error applying {m.name} to {obj.name}, removing it instead.")
+			obj.modifiers.remove(m)
+
+	for m in obj.modifiers:
+		obj.modifiers.remove(m)
 
 
 def save_s3o_file(s3o_filename,
@@ -457,6 +472,19 @@ def save_s3o_file(s3o_filename,
 		if use_selection and obj != bpy.context.object:
 			continue
 
+		if use_mesh_modifiers:
+			apply_modifiers(obj)
+
+		if use_triangles:
+			mesh = obj.data
+			# First make the target object active, then switch to Edit mode
+			bpy.context.view_layer.objects.active = obj
+			bpy.ops.object.mode_set(mode='EDIT')
+			bm = bmesh.from_edit_mesh(mesh)
+			bmesh.ops.triangulate(bm, faces=bm.faces[:], quad_method='BEAUTY', ngon_method='BEAUTY')
+			bmesh.update_edit_mesh(mesh) #, True
+			bpy.ops.object.mode_set(mode='OBJECT')
+
 		# #TODO: Remove. Brute Force test
 		# origin = bpy.data.objects['SceneRoot']
 		# origin.rotation_euler[0] = radians(-90)     # ZXY rotation order
@@ -521,7 +549,7 @@ def save_s3o_file(s3o_filename,
 	file.seek(struct.calcsize(header.binary_format), os.SEEK_CUR)
 
 	# Do the required geometric manipulations to the hierarchy of pieces
-	rootPiece = ProcessPiece(rootPiece, use_mesh_modifiers, use_triangles)
+	rootPiece = ProcessPiece(rootPiece)
 
 	header.rootPieceOffset = file.tell()
 	rootPiece.save(file)
@@ -595,8 +623,8 @@ class ExportS3O(bpy.types.Operator, ExportHelper):
 		# setting active object if there is no active object
 		if context.mode != "OBJECT":
 			# if there is no object in the scene, only "OBJECT" mode is provided
-			if not context.scene.objects.active:
-				context.scene.objects.active = context.scene.objects[0]
+			# if not context.scene.objects.active:
+			# 	context.scene.objects.active = context.scene.objects[0]
 			bpy.ops.object.mode_set(mode="OBJECT")
 		bpy.ops.object.select_all(action="DESELECT")
 
