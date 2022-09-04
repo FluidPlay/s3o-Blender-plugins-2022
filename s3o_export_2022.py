@@ -1,16 +1,12 @@
-# import math
-# from mathutils import Vector
-# import bmesh
-# import sys
-from math import radians
-
 import bmesh
 import bpy
 import mathutils
+from mathutils import Matrix
 import time
 from bpy.props import BoolProperty, StringProperty  # , EnumProperty
 import os
 import struct
+from math import radians
 
 # from struct import calcsize, unpack
 
@@ -99,6 +95,39 @@ def read_string(file, offset):
 
 	return string
 
+
+# Example usage: apply_transform(bpy.context.object, use_location=False, use_rotation=True, use_scale=True)
+def apply_transform(obj, use_location=False, use_rotation=False, use_scale=False):
+	mb = obj.matrix_basis
+	I = Matrix()
+	loc, rot, scale = mb.decompose()
+
+	# rotation
+	T = Matrix.Translation(loc)
+	# R = rot.to_matrix().to_4x4()
+	R = mb.to_3x3().normalized().to_4x4()
+	S = Matrix.Diagonal(scale).to_4x4()
+
+	transform = [I, I, I]
+	basis = [T, R, S]
+
+	def swap(i):
+		transform[i], basis[i] = basis[i], transform[i]
+
+	if use_location:
+		swap(0)
+	if use_rotation:
+		swap(1)
+	if use_scale:
+		swap(2)
+
+	M = transform[0] @ transform[1] @ transform[2]
+	if hasattr(obj.data, "transform"):
+		obj.data.transform(M)
+	for c in obj.children:
+		c.matrix_local = M @ c.matrix_local
+
+	obj.matrix_basis = basis[0] @ basis[1] @ basis[2]
 
 class s3o_header(object):
 	binary_format = '<12sI5f4I'  # .encode()
@@ -282,21 +311,15 @@ def save_s3o_file(s3o_filename,
                   use_selection=False,
                   use_mesh_modifiers=False,
                   use_triangles=False,
-				  #global_matrix=None,
-				  #use_global_matrix=False,
-                  #world_space = False,
-                  #rot_x90=False,
-                  ):   # # use_selection=True, # global_matrix=None,
-	print ("selection "+str(use_selection)
-	       +" meshmods "+str(use_mesh_modifiers)
-	       +" tris "+str(use_triangles)
-	       #+" globmatrix "+str(use_global_matrix)
-	       )
+                  ):
 
-	#if global_matrix is None:
-		#global_matrix = mathutils.Matrix()
+	######
+	print("")
+	print("Use selection: " + str(use_selection)
+	      + ", Use meshmods: " + str(use_mesh_modifiers)
+	      + ", Use triangles: " + str(use_triangles)
+	      )
 
-	#basename = os.path.basename(s3o_filename)
 	objdir = os.path.dirname(s3o_filename)
 	rootdir = folder_root(objdir, "objects3d")
 	texsdir = ""
@@ -305,8 +328,6 @@ def save_s3o_file(s3o_filename,
 		texsdir = objdir
 	else:
 		texsdir = os.path.join(rootdir, find_in_folder(rootdir, 'unittextures'))
-
-	######
 
 	header = s3o_header()
 
@@ -356,11 +377,19 @@ def save_s3o_file(s3o_filename,
 
 		piece = s3o_piece()
 		#########################################
-		# go through all mesh objects and empties, then convert them to s3o_pieces, set origins (as offsets)
+		# go through all mesh objects and empties, then convert them to s3o_pieces and set origins (as offsets)
 		#########################################
 		if obj.type == 'EMPTY' or obj.type == 'MESH':  # or: in {'MESH'} etc
+			print("---------")
 			print("Exporting [" + obj.name + "]")
 
+			#apply_transform(obj, use_location=False, use_rotation=True, use_scale=True)
+			### TODO: Apply scale/rotation
+			obj.data.transform(obj.matrix_world)
+			obj.data.update()
+			matrix = Matrix.Identity(4)
+			obj.matrix_world = matrix
+			# TODO: Add undo for each destructive operation
 			piece.name = obj.name
 			piece.verts = []
 			piece.polygons = []
@@ -403,9 +432,6 @@ def save_s3o_file(s3o_filename,
 				# First make the target object active, then switch to Edit mode
 				bpy.context.view_layer.objects.active = obj
 				bpy.ops.object.mode_set(mode='EDIT')
-				# bpy.ops.mesh.select_all(action='SELECT')
-				# bpy.ops.mesh.quads_convert_to_tris()
-				# bpy.ops.object.mode_set(mode='OBJECT')
 				bm = bmesh.from_edit_mesh(mesh)
 				bmesh.ops.triangulate(bm, faces=bm.faces[:], quad_method='BEAUTY', ngon_method='BEAUTY')
 				bmesh.update_edit_mesh(mesh) #, True
@@ -415,15 +441,15 @@ def save_s3o_file(s3o_filename,
 			# piece.polygons = []
 			if not len(obj.data.uv_layers):
 				print("UV coordinates not found! Did you unwrap this object?") # Auto-unwrapping.")
-				# Auto-unwrap to avoid errors
+				#TODO: Auto-unwrap to avoid errors
 				# bpy.ops.object.mode_set(mode='OBJECT')
 				# bpy.ops.uv.smart_project()
 			else:
 				uv_layer = mesh.uv_layers.active.data
 
-				print ("offsets: "+str(piece.xoffset)+", "+str(piece.yoffset)+", "+str(piece.zoffset))
-				objLoc = obj.matrix_world.decompose()  # obj.matrix_world @ obj.location
-				print ("objLoc: "+str(objLoc[0][0])+", "+str(objLoc[1][0])+", "+str(objLoc[2][0]))
+				#print ("offsets: "+str(piece.xoffset)+", "+str(piece.yoffset)+", "+str(piece.zoffset))
+				#objLoc = obj.matrix_world.decompose()  # obj.matrix_world @ obj.location
+				#print ("objLoc: "+str(objLoc[0][0])+", "+str(objLoc[1][0])+", "+str(objLoc[2][0]))
 				for v in mesh.vertices:  # # mesh.verts:
 					#v_co = mathutils.Vector((v.co.x + objLoc[0][0], v.co.y + objLoc[2][0], v.co.z + objLoc[1][0]))
 					#v_co = obj.matrix_world @ v_co      # apply world rotation to vertex pos
@@ -431,7 +457,7 @@ def save_s3o_file(s3o_filename,
 					vert.xpos = -v.co.x # v_co.x # + objLoc[0][0]
 					vert.ypos = v.co.z # v_co.y # + objLoc[1][0]
 					vert.zpos = v.co.y # v_co.z # + objLoc[2][0] # piece.zoffset
-					vert.xnormal = v.normal.x  # # v.no.x
+					vert.xnormal = v.normal.x
 					vert.ynormal = v.normal.y
 					vert.znormal = v.normal.z
 					piece.verts.append(vert)
@@ -467,10 +493,6 @@ def save_s3o_file(s3o_filename,
 		if p.parent == '' and ('SpringRadius' not in p.name) and ('SpringHeight' not in p.name):
 			rootPiece = p
 			print("Root = [" + rootPiece.name + "]")
-			# # Apply Matrix transformation to object
-			#if use_global_matrix:
-				#obj.data.transform(global_matrix)
-				#obj.matrix_world = global_matrix
 
 	if rootPiece is None:
 		print("No root object found. Aborting")
@@ -500,15 +522,10 @@ def save_s3o_file(s3o_filename,
 	file.seek(0, os.SEEK_SET)
 	header.save(file)
 	file.close()
-	print("Ding! Export Complete.")
-	# # Window.WaitCursor(0)
+
 	return
 
-
-# # OLD: Window.FileSelector(save_s3o_file, 'Export a Spring S3O', '*.s3o')
-# # ExportHelper is a helper class, defines filename and invoke() function which calls the file selector
-
-#@orientation_helper(axis_forward='Z', axis_up='Y')
+#@orientation_helper(axis_forward='Z', axis_up='Y') - not needed, we only export Y-up, Z-forward
 class ExportS3O(bpy.types.Operator, ExportHelper):
 	"""Export a file in the Spring S3O format (.s3o)"""
 	bl_idname = "export_scene.s3o"  # important since it's how bpy.ops.export_scene.osm is constructed
@@ -541,19 +558,6 @@ class ExportS3O(bpy.types.Operator, ExportHelper):
 		default=True
 	)
 
-	# rot_x90 = BoolProperty(
-	# 	name="Convert to Y-up",
-	# 	description="Rotate 90 degrees around X to convert to y-up",
-	# 	default=False
-	# )
-
-	# # use_space_transform?
-	# world_space = BoolProperty(
-	# 	name="Export into World space",
-	# 	description="Transform the Vertex coordinates into Worldspace",
-	# 	default=False
-	# )
-
 	def execute(self, context):
 		# Convert all properties into a dictionary, to be passed by ** (unpack)
 		# keywords = self.as_keywords(ignore=("axis_forward",
@@ -567,7 +571,10 @@ class ExportS3O(bpy.types.Operator, ExportHelper):
 		# keywords["use_global_matrix"] = self.axis_forward != 'Y' or self.axis_up != 'Z'
 
 		start_time = time.time()
-		# print('\nExport starts')
+		print("\n######################")
+		print("#### Begin Export ####")
+		print("######################\n")
+
 
 		# setting active object if there is no active object
 		if context.mode != "OBJECT":
@@ -582,13 +589,13 @@ class ExportS3O(bpy.types.Operator, ExportHelper):
 		               self.use_selection,
 		               self.use_mesh_modifiers,
 		               self.use_triangles,
-		               # global_matrix,
-		               # keywords["use_global_matrix"],
-		               ) ## , **keywords)
+		               )
 
 		bpy.ops.object.select_all(action="DESELECT")
 
-		print('finished export in %s seconds' % (time.time() - start_time))
+		print("\n######################")
+		print("Ding! Export Complete in %s seconds" % (time.time() - start_time))
+		print("######################\n\n")
 		return {"FINISHED"}
 
 	def invoke(self, context, event):
