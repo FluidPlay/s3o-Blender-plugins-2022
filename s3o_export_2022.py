@@ -164,10 +164,11 @@ class s3o_header(object):
 class s3o_piece(object):
 	binary_format = "<10I3f"
 
+	mesh = None # #
+	parent = None   # # ''
 	name = ''
 	verts = []
 	polygons = []
-	parent = ''
 	children = []
 
 	nameOffset = 0  # uint
@@ -203,8 +204,10 @@ class s3o_piece(object):
 				data = struct.pack("<3I", f[0], f[1], f[2])
 				file.write(data)
 
+	# Takes a piece (initially, the root piece, then recurses children)
 	def save(self, file):
-		print("saving object [" + self.name + "]")
+		print("saving piece [" + self.name + "]")
+
 		startpos = file.tell()
 		# seek forward the size of a piece header
 		file.seek(struct.calcsize(self.binary_format), os.SEEK_CUR)
@@ -305,6 +308,90 @@ def asciiz(s):
 		n = n + 1
 	return s[0:n]
 
+def ProcessPiece(piece, use_mesh_modifiers, use_triangles):  # Empty or Mesh, will recurse through children
+	obj = piece.mesh
+
+	if obj.type == 'EMPTY' or obj.type == 'MESH':  # or: in {'MESH'} etc
+		apply_transform(obj, use_location=False, use_rotation=True, use_scale=True)
+		### TODO: Apply scale/rotation
+		#obj.data.transform(obj.matrix_world)
+		#obj.data.update()
+		#matrix = Matrix.Identity(4)
+		#obj.matrix_world = matrix
+
+		#objLoc = obj.matrix_world @ obj.location
+		localPos = obj.matrix_local #local x = [0][3], y = [1][3], z = [2][3]
+		piece.xoffset = -localPos[0][3] # -obj.location[0] #objLoc[0]
+		piece.yoffset = localPos[2][3] # obj.location[2] #objLoc[1]
+		piece.zoffset = localPos[1][3] # obj.location[1] #objLoc[2]
+
+	#########################################
+	# For 3D meshes, export the geometry
+	#########################################
+	if obj.type == 'MESH':
+		mesh = obj.data
+		# # perform mesh modifications if they were requested
+		if use_mesh_modifiers:
+			bpy.ops.object.mode_set(mode='OBJECT')
+			for i in range(0, len(obj.modifiers)):
+				name = obj.modifiers[i].name
+				bpy.ops.object.modifier_apply(modifier=name)
+		if use_triangles:
+			# First make the target object active, then switch to Edit mode
+			bpy.context.view_layer.objects.active = obj
+			bpy.ops.object.mode_set(mode='EDIT')
+			bm = bmesh.from_edit_mesh(mesh)
+			bmesh.ops.triangulate(bm, faces=bm.faces[:], quad_method='BEAUTY', ngon_method='BEAUTY')
+			bmesh.update_edit_mesh(mesh) #, True
+			bpy.ops.object.mode_set(mode='OBJECT')
+
+		mesh.update()
+
+		# piece.verts = []
+		# piece.polygons = []
+		if not len(obj.data.uv_layers):
+			print("UV coordinates not found! Did you unwrap this object?") # Auto-unwrapping.")
+			#TODO: Auto-unwrap to avoid errors
+			# bpy.ops.object.mode_set(mode='OBJECT')
+			# bpy.ops.uv.smart_project()
+		else:
+			uv_layer = mesh.uv_layers.active.data
+
+			#print ("offsets: "+str(piece.xoffset)+", "+str(piece.yoffset)+", "+str(piece.zoffset))
+			#objLoc = obj.matrix_world.decompose()  # obj.matrix_world @ obj.location
+			#print ("objLoc: "+str(objLoc[0][0])+", "+str(objLoc[1][0])+", "+str(objLoc[2][0]))
+			for v in mesh.vertices:  # # mesh.verts:
+				#v_co = mathutils.Vector((v.co.x + objLoc[0][0], v.co.y + objLoc[2][0], v.co.z + objLoc[1][0]))
+				#v_co = obj.matrix_world @ v_co      # apply world rotation to vertex pos
+				vert = s3o_vert()
+				vert.xpos = -v.co.x # v_co.x # + objLoc[0][0]
+				vert.ypos = v.co.z # v_co.y # + objLoc[1][0]
+				vert.zpos = v.co.y # v_co.z # + objLoc[2][0] # piece.zoffset
+				vert.xnormal = v.normal.x
+				vert.ynormal = v.normal.y
+				vert.znormal = v.normal.z
+				piece.verts.append(vert)
+			print("Exported " + str(len(piece.verts)) + " verts")
+			for poly in mesh.polygons:  # # mesh.faces
+				face = []
+				# i = 0
+				for loop_index in range(poly.loop_start, poly.loop_start + poly.loop_total):
+					vIndex = mesh.loops[loop_index].vertex_index
+					face.append(vIndex)
+					# get uvs
+					piece.verts[vIndex].texu = uv_layer[loop_index].uv.x  # poly.uv[i].x
+					piece.verts[vIndex].texv = uv_layer[loop_index].uv.y  # poly.uv[i].y
+					# i += 1
+				piece.polygons.append(face)
+			piece.numVerts = len(piece.verts)
+			piece.vertTableSize = len(piece.polygons)
+
+	# Recurse through children |=> piece.children[idx] = [piece,...]
+	for idx, childPiece in enumerate(piece.children):
+		piece.children[idx] = ProcessPiece(childPiece, use_mesh_modifiers, use_triangles)
+
+	return piece
+
 
 def save_s3o_file(s3o_filename,
                   context,
@@ -353,9 +440,9 @@ def save_s3o_file(s3o_filename,
 
 	# get the radius from the SpringRadius empty sphere size
 	pieces = []
-	children = {}   # dictionary
-	for obj in bpy.data.objects:  # # scn.objects
-		if 'SpringRadius' in obj.name:  # getName()
+	parentChildren = {}   # dictionary
+	for obj in bpy.data.objects:
+		if 'SpringRadius' in obj.name:
 			header.radius = obj.empty_display_size # dimensions[0]  # getSize()
 			header.midx = -obj.location[0]  # getLocation()
 			header.midy = obj.location[2]
@@ -380,104 +467,30 @@ def save_s3o_file(s3o_filename,
 		# go through all mesh objects and empties, then convert them to s3o_pieces and set origins (as offsets)
 		#########################################
 		if obj.type == 'EMPTY' or obj.type == 'MESH':  # or: in {'MESH'} etc
-			print("---------")
-			print("Exporting [" + obj.name + "]")
-
-			#apply_transform(obj, use_location=False, use_rotation=True, use_scale=True)
-			### TODO: Apply scale/rotation
-			obj.data.transform(obj.matrix_world)
-			obj.data.update()
-			matrix = Matrix.Identity(4)
-			obj.matrix_world = matrix
 			# TODO: Add undo for each destructive operation
+			piece.mesh = obj  # # Test
 			piece.name = obj.name
 			piece.verts = []
 			piece.polygons = []
-			#objLoc = obj.matrix_world @ obj.location
-			localPos = obj.matrix_local #local x = [0][3], y = [1][3], z = [2][3]
-			piece.xoffset = -localPos[0][3] # -obj.location[0] #objLoc[0]
-			piece.yoffset = localPos[2][3] # obj.location[2] #objLoc[1]
-			piece.zoffset = localPos[1][3] # obj.location[1] #objLoc[2]
+			print("-----------------------------")
+			print("Parsing [" + obj.name + "]")
 			piece.primitiveType = 0
 			piece.vertType = 0
 			piece.numVerts = 0
 			piece.vertTableSize = 0
 			if obj.parent:  # getParent()
-				piece.parent = obj.parent.name
+				piece.parent = obj.parent # # .name
 				# initialize the parent piece into the children dict, if needed
-				if piece.parent not in children:
-					children[piece.parent] = []
-				children[piece.parent].append(piece)    # then append this piece
-				print("Child of " + piece.parent)
+				if piece.parent.name not in parentChildren:
+					parentChildren[piece.parent.name] = []
+				parentChildren[piece.parent.name].append(piece)    # then append this piece
+				print("    Child of " + piece.parent.name)
 			else:
-				piece.parent = ''
+				piece.parent = None  # ''
 
-		#########################################
-		# For 3D meshes, export the geometry
-		#########################################
-		if obj.type == 'MESH':
-			mesh = obj.data
-			mesh.update()
-			# # # Apply Matrix transformation to object
-			# if obj.name=="SceneRoot":
-			#  if use_global_matrix:
-			#   obj.data.transform(global_matrix)
-
-			# # perform mesh modifications if they were requested
-			if use_mesh_modifiers:
-				for i in range(0, len(obj.modifiers)):
-					name = obj.modifiers[i].name
-					bpy.ops.object.modifier_apply(modifier=name)
-			if use_triangles:
-				# First make the target object active, then switch to Edit mode
-				bpy.context.view_layer.objects.active = obj
-				bpy.ops.object.mode_set(mode='EDIT')
-				bm = bmesh.from_edit_mesh(mesh)
-				bmesh.ops.triangulate(bm, faces=bm.faces[:], quad_method='BEAUTY', ngon_method='BEAUTY')
-				bmesh.update_edit_mesh(mesh) #, True
-				bpy.ops.object.mode_set(mode='OBJECT')
-
-			# piece.verts = []
-			# piece.polygons = []
-			if not len(obj.data.uv_layers):
-				print("UV coordinates not found! Did you unwrap this object?") # Auto-unwrapping.")
-				#TODO: Auto-unwrap to avoid errors
-				# bpy.ops.object.mode_set(mode='OBJECT')
-				# bpy.ops.uv.smart_project()
-			else:
-				uv_layer = mesh.uv_layers.active.data
-
-				#print ("offsets: "+str(piece.xoffset)+", "+str(piece.yoffset)+", "+str(piece.zoffset))
-				#objLoc = obj.matrix_world.decompose()  # obj.matrix_world @ obj.location
-				#print ("objLoc: "+str(objLoc[0][0])+", "+str(objLoc[1][0])+", "+str(objLoc[2][0]))
-				for v in mesh.vertices:  # # mesh.verts:
-					#v_co = mathutils.Vector((v.co.x + objLoc[0][0], v.co.y + objLoc[2][0], v.co.z + objLoc[1][0]))
-					#v_co = obj.matrix_world @ v_co      # apply world rotation to vertex pos
-					vert = s3o_vert()
-					vert.xpos = -v.co.x # v_co.x # + objLoc[0][0]
-					vert.ypos = v.co.z # v_co.y # + objLoc[1][0]
-					vert.zpos = v.co.y # v_co.z # + objLoc[2][0] # piece.zoffset
-					vert.xnormal = v.normal.x
-					vert.ynormal = v.normal.y
-					vert.znormal = v.normal.z
-					piece.verts.append(vert)
-				print("Exported " + str(len(piece.verts)) + " verts")
-				for poly in mesh.polygons:  # # mesh.faces
-					face = []
-					# i = 0
-					for loop_index in range(poly.loop_start, poly.loop_start + poly.loop_total):
-						vIndex = mesh.loops[loop_index].vertex_index
-						face.append(vIndex)
-						# get uvs
-						piece.verts[vIndex].texu = uv_layer[loop_index].uv.x  # poly.uv[i].x
-						piece.verts[vIndex].texv = uv_layer[loop_index].uv.y  # poly.uv[i].y
-						# i += 1
-					piece.polygons.append(face)
-				piece.numVerts = len(piece.verts)
-				piece.vertTableSize = len(piece.polygons)
-
-		# Finally, append the piece to the list of pieces
-		pieces.append(piece)
+		if obj.type == 'EMPTY' or obj.type == 'MESH':  # or: in {'MESH'} etc
+			# Finally, append the (valid) piece to the list of pieces
+			pieces.append(piece)
 
 	# # No longer aborts if these objects weren't found.
 	if not foundRadius:
@@ -488,9 +501,9 @@ def save_s3o_file(s3o_filename,
 	# # find the piece with no parent and set it as the Root
 	rootPiece = None
 	for p in pieces:
-		if p.name in children:
-			p.children = children[p.name]
-		if p.parent == '' and ('SpringRadius' not in p.name) and ('SpringHeight' not in p.name):
+		if p.name in parentChildren:    # if it's a parent of another piece
+			p.children = parentChildren[p.name]   # copy/assign the 'children' array stored in parentChildren for that parent
+		if p.parent is None and ('SpringRadius' not in p.name) and ('SpringHeight' not in p.name): #p.parent == ''
 			rootPiece = p
 			print("Root = [" + rootPiece.name + "]")
 
@@ -506,6 +519,9 @@ def save_s3o_file(s3o_filename,
 
 	# skip forward the size of the header, we'll come back later to write the header
 	file.seek(struct.calcsize(header.binary_format), os.SEEK_CUR)
+
+	# Do the required geometric manipulations to the hierarchy of pieces
+	rootPiece = ProcessPiece(rootPiece, use_mesh_modifiers, use_triangles)
 
 	header.rootPieceOffset = file.tell()
 	rootPiece.save(file)
