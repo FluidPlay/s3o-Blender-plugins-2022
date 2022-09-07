@@ -50,8 +50,11 @@ s3o-export-2022 only exports to the Y-up, Z-forward axis convention used by [UpS
 * Try to clean up your scene from any extraneous objects, like lights and cameras. They might interfere with the detection of the scene-root gameobject
 * Texture naming is not currently being exported. It was quite a hassle to setup in the 2008 version, while it's super-easy to assign the texture names in Upspring or Beherith's excellent obj2s3o tool. 
 * Talking of obj2s3o, it has an optimize option for .s3o files, which is also ran when you apply vertex-AO or do other processing there. 
-* It's a good idea to have a single parent for all objects in the scene.
+* Remember to have a single parent for all objects in the scene.
 * Whenever possible, try to first import an existing s3o as a basis for your work, it'll set up the SpringRadius and SpringHeight objects for you fast and easy. If those objects aren't found, the exporter will simply assign some default values, you may update them later in Upspring.
+* If you're importing your model from Maya, make sure to NOT export this using the default FBX exporter. It ruins the UVs and that's not readily apparent in Blender, it's only clear when you open the s3O model in UpSpring or in-game. Use the "Game Exporter" option, set it to Binary/FBX2012 (newer versions might work too, untested), like below:
+![Maya Export Settings](docs/5.png)
+
 
 ## Support:
 Besides the "issues" section here in Github, please join the TAP (WIP RTS game, Total Atomic Power) Discord, #tools channel to get the fastest possible support. Here's the invite/link: [https://discord.gg/XhhBaZZ](https://discord.gg/XhhBaZZ)
