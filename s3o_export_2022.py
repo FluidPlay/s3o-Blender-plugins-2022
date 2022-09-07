@@ -312,14 +312,13 @@ def ProcessPiece(piece):  # Empty or Mesh, will recurse through children
 	obj = piece.mesh
 
 	if obj.type == 'EMPTY' or obj.type == 'MESH':  # or: in {'MESH'} etc
+		### Apply scale/rotation
 		apply_transform(obj, use_location=False, use_rotation=True, use_scale=True)
-		### TODO: Apply scale/rotation
-		#obj.data.transform(obj.matrix_world)
-		#obj.data.update()
-		#matrix = Matrix.Identity(4)
-		#obj.matrix_world = matrix
-
-		#objLoc = obj.matrix_world @ obj.location
+			#obj.data.transform(obj.matrix_world)
+			#obj.data.update()
+			#matrix = Matrix.Identity(4)
+			#obj.matrix_world = matrix
+			#objLoc = obj.matrix_world @ obj.location
 		localPos = obj.matrix_local #local x = [0][3], y = [1][3], z = [2][3]
 		piece.xoffset = -localPos[0][3] # -obj.location[0] #objLoc[0]
 		piece.yoffset = localPos[2][3] # obj.location[2] #objLoc[1]
@@ -329,6 +328,7 @@ def ProcessPiece(piece):  # Empty or Mesh, will recurse through children
 	# For 3D meshes, export the geometry
 	#########################################
 	if obj.type == 'MESH':
+		bpy.context.view_layer.objects.active = obj
 		mesh = obj.data
 		# # perform mesh modifications if they were requested
 		# if use_mesh_modifiers:
@@ -346,6 +346,9 @@ def ProcessPiece(piece):  # Empty or Mesh, will recurse through children
 		# 	bpy.ops.object.mode_set(mode='OBJECT')
 
 		mesh.update()
+		# bpy.ops.object.mode_set(mode='EDIT')
+		# bmesh.update_edit_mesh(mesh)  # , True
+		# bpy.ops.object.mode_set(mode='OBJECT')
 
 		# piece.verts = []
 		# piece.polygons = []
@@ -433,7 +436,7 @@ def save_s3o_file(s3o_filename,
 
 	header = s3o_header()
 
-	scn = context.scene  # Blender.Scene.GetCurrent()
+	#scn = context.scene  # Blender.Scene.GetCurrent()
 
 	# get the texture name to save into the header
 	# # material = Material.Get('SpringMat')
