@@ -308,7 +308,7 @@ def asciiz(s):
 		n = n + 1
 	return s[0:n]
 
-def ProcessPiece(piece):  # Empty or Mesh, will recurse through children
+def ProcessPiece(piece, scene):  # Empty or Mesh, will recurse through children
 	obj = piece.mesh
 
 	if obj.type == 'EMPTY' or obj.type == 'MESH':  # or: in {'MESH'} etc
@@ -330,25 +330,40 @@ def ProcessPiece(piece):  # Empty or Mesh, will recurse through children
 	if obj.type == 'MESH':
 		bpy.context.view_layer.objects.active = obj
 		mesh = obj.data
-		# # perform mesh modifications if they were requested
-		# if use_mesh_modifiers:
-		# 	bpy.ops.object.mode_set(mode='OBJECT')
-		# 	for i in range(0, len(obj.modifiers)):
-		# 		name = obj.modifiers[i].name
-		# 		bpy.ops.object.modifier_apply(modifier=name)
-		# if use_triangles:
-		# 	# First make the target object active, then switch to Edit mode
-		# 	bpy.context.view_layer.objects.active = obj
-		# 	bpy.ops.object.mode_set(mode='EDIT')
-		# 	bm = bmesh.from_edit_mesh(mesh)
-		# 	bmesh.ops.triangulate(bm, faces=bm.faces[:], quad_method='BEAUTY', ngon_method='BEAUTY')
-		# 	bmesh.update_edit_mesh(mesh) #, True
-		# 	bpy.ops.object.mode_set(mode='OBJECT')
 
 		mesh.update()
 		# bpy.ops.object.mode_set(mode='EDIT')
 		# bmesh.update_edit_mesh(mesh)  # , True
 		# bpy.ops.object.mode_set(mode='OBJECT')
+
+		# Split polygons by UV islands (to prevent the shared/synced UVs issue in S3Os)
+		# From: https://blender.stackexchange.com/questions/73647/python-bmesh-for-loop-breaking-trying-to-split-mesh-via-uv-islands
+		bpy.ops.object.mode_set(mode='EDIT')
+		bm = bmesh.from_edit_mesh(mesh)
+		bm.select_mode = {'FACE'}
+		faceGroups = []
+		bpy.ops.mesh.select_mode(use_extend=False, use_expand=False, type='FACE')
+		save_sync = scene.tool_settings.use_uv_select_sync
+		scene.tool_settings.use_uv_select_sync = True
+		faces = set(bm.faces[:])
+		while faces:
+			bpy.ops.mesh.select_all(action='DESELECT')
+			face = faces.pop()
+			face.select = True
+			bpy.ops.uv.select_linked()
+			selected_faces = {f for f in faces if f.select}
+			selected_faces.add(face)  # this or bm.faces above?
+			faceGroups.append(selected_faces)
+			faces -= selected_faces
+		scene.tool_settings.use_uv_select_sync = save_sync
+		for g in faceGroups:
+			bpy.ops.mesh.select_all(action='DESELECT')
+			for f in g:
+				f.select = True
+			bpy.ops.mesh.split()
+		mesh.update()
+		bpy.ops.object.mode_set(mode='OBJECT')
+
 
 		# piece.verts = []
 		# piece.polygons = []
@@ -358,12 +373,13 @@ def ProcessPiece(piece):  # Empty or Mesh, will recurse through children
 			# bpy.ops.object.mode_set(mode='OBJECT')
 			# bpy.ops.uv.smart_project()
 		else:
+			mesh.calc_loop_triangles()
 			uv_layer = mesh.uv_layers.active.data
 
 			#print ("offsets: "+str(piece.xoffset)+", "+str(piece.yoffset)+", "+str(piece.zoffset))
 			#objLoc = obj.matrix_world.decompose()  # obj.matrix_world @ obj.location
 			#print ("objLoc: "+str(objLoc[0][0])+", "+str(objLoc[1][0])+", "+str(objLoc[2][0]))
-			for v in mesh.vertices:  # # mesh.verts:
+			for v in mesh.vertices:
 				#v_co = mathutils.Vector((v.co.x + objLoc[0][0], v.co.y + objLoc[2][0], v.co.z + objLoc[1][0]))
 				#v_co = obj.matrix_world @ v_co      # apply world rotation to vertex pos
 				vert = s3o_vert()
@@ -375,23 +391,22 @@ def ProcessPiece(piece):  # Empty or Mesh, will recurse through children
 				vert.znormal = v.normal.z
 				piece.verts.append(vert)
 			print("Exported " + str(len(piece.verts)) + " verts")
-			for poly in mesh.polygons:  # # mesh.faces
-				face = []
-				# i = 0
-				for loop_index in range(poly.loop_start, poly.loop_start + poly.loop_total):
-					vIndex = mesh.loops[loop_index].vertex_index
-					face.append(vIndex)
+			for tri in mesh.loop_triangles:     # polygons
+				faceIndices = []
+				for loop_index in tri.loops:     # loop_indices # range(poly.loop_start, poly.loop_start + poly.loop_total):
+					loop = mesh.loops[loop_index]
+					vIndex = loop.vertex_index
+					faceIndices.append(vIndex)
 					# get uvs
 					piece.verts[vIndex].texu = uv_layer[loop_index].uv.x  # poly.uv[i].x
 					piece.verts[vIndex].texv = uv_layer[loop_index].uv.y  # poly.uv[i].y
-					# i += 1
-				piece.polygons.append(face)
+				piece.polygons.append(faceIndices)
 			piece.numVerts = len(piece.verts)
 			piece.vertTableSize = len(piece.polygons)
 
 	# Recurse through children |=> piece.children[idx] = [piece,...]
 	for idx, childPiece in enumerate(piece.children):
-		piece.children[idx] = ProcessPiece(childPiece)
+		piece.children[idx] = ProcessPiece(childPiece, scene)
 
 	return piece
 
@@ -436,7 +451,7 @@ def save_s3o_file(s3o_filename,
 
 	header = s3o_header()
 
-	#scn = context.scene  # Blender.Scene.GetCurrent()
+	scene = context.scene  # Blender.Scene.GetCurrent()
 
 	# get the texture name to save into the header
 	# # material = Material.Get('SpringMat')
@@ -552,7 +567,7 @@ def save_s3o_file(s3o_filename,
 	file.seek(struct.calcsize(header.binary_format), os.SEEK_CUR)
 
 	# Do the required geometric manipulations to the hierarchy of pieces
-	rootPiece = ProcessPiece(rootPiece)
+	rootPiece = ProcessPiece(rootPiece, scene)
 
 	header.rootPieceOffset = file.tell()
 	rootPiece.save(file)
