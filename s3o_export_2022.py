@@ -21,7 +21,7 @@ from bpy_extras.io_utils import ExportHelper, orientation_helper, axis_conversio
 bl_info = {
 	"name": "Export Spring S3O Object (.s3o)",
 	"author": "Jez Kabanov and Breno 'MaDDoX' Azevedo <jlcercos@gmail.com> and <maddox.br@gmail.com>",
-	"version": (0, 6, 1),
+	"version": (0, 7, 1),
 	"blender": (3, 10, 0),
 	"location": "File > Export > Spring S3O Object (.s3o)",
 	"description": "Exports a file in the Spring S3O format",
