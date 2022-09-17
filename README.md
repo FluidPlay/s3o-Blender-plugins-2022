@@ -34,11 +34,14 @@ Although SpringRTS does support .dae and other open 3d formats, the best object 
 ## Attention:
 Currently the s3o exporter carries out destructive operations. That means "Apply Modifiers" and "Convert quads to triangles" will not be undone, so make sure to keep a backup. 
 
-## Baking rotations and scales
-The s3o exporter bakes (applies) rotation and scale into all objects for you, starting from the root piece. That's another destructive operation, so even with all export options unticked, this one is required and will be performed. Once again, keep a backup safe and handy. It's worth noting that sometimes during tests, pieces at the end of the hierarchy would not get its transformations applied properly - so if you run into hierarchy position errors when opening the model in UpSpring, try doing "Apply Scale and Rotation" before export, after selecting all objects in the scene.
-
 ## s3o object radius and height:
 These s3o specific parameters may be defined in the Blender scene with two empty objects. Their names must be (or include) "SpringHeight" and "SpringRadius", with the first being set to "Arrows" display mode and the second to sphere display mode. The vertical (z in Blender) position of the "SpringHeight" object will define the object height, and should always be above the top-most point of the mesh - the Arrows size there is disregarded, set it as you wish. As for the "SpringRadius" empty, its position and display size will define the center and radius of the outer collision sphere to be assigned to the model in-game.
+
+## Baking rotations and scales
+The s3o exporter bakes (applies) rotation and scale into all objects for you, starting from the root piece. That's a destructive operation, so even with all export options unticked, this one is required and will be performed, so remember to backup your Blender scene before export. It's worth noting that sometimes during tests, pieces at the end of the hierarchy would not get its transformations applied properly - so if you run into hierarchy position errors when opening the model in UpSpring, try doing "Apply Scale and Rotation" manually in Blender before export, with the offending objects selected.
+
+## Auto-edge-split by UV islands
+Since version 0.6.1, the s3o exporter also automatically splits the polygons across UV island edges. That is necessary to prevent UV corruption in the s3o, due to the shared UV-indexes system used by Blender. Please notice that's another destructive operation, so once again, make sure to backup the original file before exporting the s3o.
 
 ## s3o importer (s3o_import.py): 
 The included version of the s3o importer is slightly modified from the one present in the [Skeletor](https://github.com/Beherith/Skeletor_S3O) plugin, by Beherith. This version adds support for no-geometry s3o objects (like empties) and parents all imported objects to a single collection. This might pose some challenge for certain names, so feel free to use Skeletor's version if you prefer. To install it, follow the same steps outlined at the "Install and Usage" section above.
