@@ -489,6 +489,8 @@ def save_s3o_file(s3o_filename,
 
 		if use_selection and obj != bpy.context.object:
 			continue
+		if obj.type == 'ARMATURE':
+			continue
 
 		if use_mesh_modifiers:
 			apply_modifiers(obj)
