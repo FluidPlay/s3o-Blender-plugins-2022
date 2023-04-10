@@ -296,10 +296,12 @@ class s3o_piece(object):
                     pass
                 bm.faces.ensure_lookup_table()
                 uv_layer = bm.loops.layers.uv.verify()
-                for i, loop in enumerate(bm.faces[-1].loops):
-                    uv = loop[uv_layer].uv
-                    uv[0] = self.verts[f[i]].texu
-                    uv[1] = self.verts[f[i]].texv
+                # If size of faces != 0 then
+                if len(bm.faces) > 0:
+                    for i, loop in enumerate(bm.faces[-1].loops):
+                        uv = loop[uv_layer].uv
+                        uv[0] = self.verts[f[i]].texu
+                        uv[1] = self.verts[f[i]].texv
 
             self.mesh = bpy.data.meshes.new(self.name)
             bm.to_mesh(self.mesh)
