@@ -435,7 +435,9 @@ def save_s3o_file	(s3o_filename,
 					):
 
 	######
-	print("")
+	texture1Name = "armota_tex1"
+	texture2Name = "armota_tex2"
+	print("\n")
 	print("Use selection: " + str(use_selection)
 	      + ", Use meshmods: " + str(use_mesh_modifiers)
 	      + ", Use triangles: " + str(use_triangles)
@@ -454,13 +456,14 @@ def save_s3o_file	(s3o_filename,
 	header = s3o_header()
 
 	scene = context.scene  # Blender.Scene.GetCurrent()
+	selection = context.selected_objects
 
 	# get the texture name to save into the header
 	# # material = Material.Get('SpringMat')
 	# # textures = material.getTextures()
 	# # We're just assigning default texture names now. Easy to change in UpSpring.
-	header.texture1 = "texture1"  # os.path.basename(textures[0].tex.image.getFilename())
-	header.texture2 = "texture2"  # os.path.basename(textures[1].tex.image.getFilename())
+	header.texture1 = texture1Name  #"texture1"  # os.path.basename(textures[0].tex.image.getFilename())
+	header.texture2 = texture2Name  #"texture2"  # os.path.basename(textures[1].tex.image.getFilename())
 	# print("texture1: " + header.texture1)
 	# print("texture2: " + header.texture2)
 
@@ -489,9 +492,12 @@ def save_s3o_file	(s3o_filename,
 			foundHeight = True
 			continue
 
-		# TODO: Support multiple objects selected, instead of only the current one
-		if use_selection and obj != bpy.context.object:
-			continue
+		if use_selection:
+			if not (obj in selection): #  != bpy.context.object:
+				continue
+			else:
+				print(obj.name+" in selection!")
+
 		if obj.type == 'ARMATURE':
 			continue
 
@@ -501,7 +507,7 @@ def save_s3o_file	(s3o_filename,
 		if use_triangles and obj.type == "MESH":
 			mesh = obj.data
 			# First make the target object active, then switch to Edit mode
-			bpy.context.view_layer.objects.active = obj
+			context.view_layer.objects.active = obj
 			bpy.ops.object.mode_set(mode='EDIT')
 			bm = bmesh.from_edit_mesh(mesh)
 			bmesh.ops.triangulate(bm, faces=bm.faces[:], quad_method='BEAUTY', ngon_method='BEAUTY')
@@ -553,8 +559,8 @@ def save_s3o_file	(s3o_filename,
 			else:
 				piece.parent = None  # ''
 
+		# Finally, append the piece (if valid) to the list of pieces
 		if obj.type == 'EMPTY' or obj.type == 'MESH':  # or: in {'MESH'} etc
-			# Finally, append the (valid) piece to the list of pieces
 			pieces.append(piece)
 
 	# # No longer aborts if these objects weren't found.
@@ -568,7 +574,7 @@ def save_s3o_file	(s3o_filename,
 	for p in pieces:
 		if p.name in parentChildren:    # if it's a parent of another piece
 			p.children = parentChildren[p.name]   # copy/assign the 'children' array stored in parentChildren for that parent
-		if p.parent is None and ('SpringRadius' not in p.name) and ('SpringHeight' not in p.name): #p.parent == ''
+		if p.parent is None and ('SpringRadius' not in p.name) and ('SpringHeight' not in p.name):  # p.parent == ''
 			rootPiece = p
 			print("Root = [" + rootPiece.name + "]")
 
@@ -669,7 +675,8 @@ class ExportS3O(bpy.types.Operator, ExportHelper):
 			# if not context.scene.objects.active:
 			# 	context.scene.objects.active = context.scene.objects[0]
 			bpy.ops.object.mode_set(mode="OBJECT")
-		bpy.ops.object.select_all(action="DESELECT")
+		if not self.use_selection:
+			bpy.ops.object.select_all(action="DESELECT")
 
 		# # ====== Actually export the s3o file
 		save_s3o_file( self.filepath, context,
@@ -679,7 +686,7 @@ class ExportS3O(bpy.types.Operator, ExportHelper):
 					   self.remove_suffix
 		               )
 
-		bpy.ops.object.select_all(action="DESELECT")
+		# bpy.ops.object.select_all(action="DESELECT")
 
 		print("\n######################")
 		print("Ding! Export Complete in %s seconds" % (time.time() - start_time))
