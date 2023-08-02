@@ -26,6 +26,7 @@ Although SpringRTS does support .dae and other open 3d formats, the best object 
 	1. "Selection Only" - exports a single selected object in the scene. Currently it won't export the children hierarchy.
 	2. "Apply Modifiers" - applies any object modifiers present in the scene, like 'mirror' or 'array'.
 	3. "Convert quads to triangles" - what the name says.
+	4. "Remove name-clash suffixes" - Redundant Blender object names like "wing.001" will be exported as "wing" 
   
 ![Export](docs/4.png)
 
