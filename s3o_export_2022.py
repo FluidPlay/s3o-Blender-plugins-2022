@@ -686,7 +686,7 @@ class ExportS3O(bpy.types.Operator, ExportHelper):
 					   self.remove_suffix
 		               )
 
-		# bpy.ops.object.select_all(action="DESELECT")
+		bpy.ops.object.select_all(action="DESELECT")
 
 		print("\n######################")
 		print("Ding! Export Complete in %s seconds" % (time.time() - start_time))
