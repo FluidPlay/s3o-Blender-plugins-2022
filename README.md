@@ -48,6 +48,11 @@ Since version 0.6.1, the s3o exporter also automatically splits the polygons acr
 ## S3O importer (s3o_import.py): 
 The included version of the s3o importer is slightly modified from the one present in the [Skeletor](https://github.com/Beherith/Skeletor_S3O) plugin, by Beherith. This version adds support for no-geometry s3o objects (like empties) and parents all imported objects to a single collection. This might pose some challenge for certain names, so feel free to use Skeletor's version if you prefer. To install it, follow the same steps outlined at the "Install and Usage" section above.
 
+## S3O Batch exporter (s3o_batch_export.py):
+This script exports each root-level object into its own file, next to the source .blend file.
+It will also remove root-level objects prefixes, if there is/are underscore(s) in its name (eg: armaca_2_base => armaca_2).
+_HOW-TO:_ De-select everything. Copy-paste this into a script window, then click play.
+
 ## Coordinates System:
 s3o-export-2022 only exports to the Y-up, Z-forward axis convention used by [UpSpring](https://github.com/SpliFF/upspring) (native s3o model editor) and the SpringRTS engine. The importer automatically converts the coordinates to the Z-up, Y-forward axis convention used by Blender, so the roundtrip of a model should be straightforward.
 
