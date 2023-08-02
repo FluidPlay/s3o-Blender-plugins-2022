@@ -426,18 +426,20 @@ def apply_modifiers(obj):
 		obj.modifiers.remove(m)
 
 
-def save_s3o_file(s3o_filename,
-                  context,
-                  use_selection=False,
-                  use_mesh_modifiers=False,
-                  use_triangles=False,
-                  ):
+def save_s3o_file	(s3o_filename,
+					context,
+					use_selection=False,
+					use_mesh_modifiers=False,
+					use_triangles=False,
+					remove_suffix=True
+					):
 
 	######
 	print("")
 	print("Use selection: " + str(use_selection)
 	      + ", Use meshmods: " + str(use_mesh_modifiers)
 	      + ", Use triangles: " + str(use_triangles)
+		  + ", Remove Suffix: " + str(remove_suffix)
 	      )
 
 	objdir = os.path.dirname(s3o_filename)
@@ -487,6 +489,7 @@ def save_s3o_file(s3o_filename,
 			foundHeight = True
 			continue
 
+		# TODO: Support multiple objects selected, instead of only the current one
 		if use_selection and obj != bpy.context.object:
 			continue
 		if obj.type == 'ARMATURE':
@@ -495,7 +498,7 @@ def save_s3o_file(s3o_filename,
 		if use_mesh_modifiers:
 			apply_modifiers(obj)
 
-		if use_triangles:
+		if use_triangles and obj.type == "MESH":
 			mesh = obj.data
 			# First make the target object active, then switch to Edit mode
 			bpy.context.view_layer.objects.active = obj
@@ -518,6 +521,20 @@ def save_s3o_file(s3o_filename,
 			# TODO: Add undo for each destructive operation
 			piece.mesh = obj  # # Test
 			piece.name = obj.name
+			if remove_suffix:
+				split_name = piece.name.split(".")
+				split_name_len = len(split_name)
+				if split_name_len > 1:
+					suffix = split_name[-1]  # last element (eg: 001 within thruster.L.001)
+					if suffix.isdigit():
+						new_name = ""
+						for i in range(split_name_len):
+							if i < (split_name_len - 1):
+								if i > 0:
+									new_name = new_name + "."
+								new_name = new_name + split_name[i]
+						print("\tBlender name: " + obj.name + ", saved name: " + new_name)
+						piece.name = new_name
 			piece.verts = []
 			piece.polygons = []
 			print("-----------------------------")
@@ -622,6 +639,12 @@ class ExportS3O(bpy.types.Operator, ExportHelper):
 		default=True
 	)
 
+	remove_suffix: BoolProperty(
+		name="Remove name-clash suffixes",
+		description="Removes the .001, etc suffixes added by Blender to same-named objects",
+		default=True
+	)
+
 	def execute(self, context):
 		# Convert all properties into a dictionary, to be passed by ** (unpack)
 		# keywords = self.as_keywords(ignore=("axis_forward",
@@ -653,6 +676,7 @@ class ExportS3O(bpy.types.Operator, ExportHelper):
 		               self.use_selection,
 		               self.use_mesh_modifiers,
 		               self.use_triangles,
+					   self.remove_suffix
 		               )
 
 		bpy.ops.object.select_all(action="DESELECT")
