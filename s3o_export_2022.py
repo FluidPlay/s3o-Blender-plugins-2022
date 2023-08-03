@@ -205,7 +205,7 @@ class s3o_piece(object):
 				file.write(data)
 
 	# Takes a piece (initially, the root piece, then recurses children)
-	def save(self, file):
+	def save(self, file, remove_suffix=True):
 		print("saving piece [" + self.name + "]")
 
 		startpos = file.tell()
@@ -213,6 +213,23 @@ class s3o_piece(object):
 		file.seek(struct.calcsize(self.binary_format), os.SEEK_CUR)
 		# write name
 		self.nameOffset = file.tell()
+
+		## TODO: Rename 'name' here
+		if remove_suffix:
+			split_name = self.name.split(".")
+			split_name_len = len(split_name)
+			if split_name_len > 1:
+				suffix = split_name[-1]  # last element (eg: 001 within thruster.L.001)
+				if suffix.isdigit():
+					new_name = ""
+					for i in range(split_name_len):
+						if i < (split_name_len - 1):
+							if i > 0:
+								new_name = new_name + "."
+							new_name = new_name + split_name[i]
+					print("\tBlender name: " + self.name + ", saved name: " + new_name)
+					self.name = new_name
+
 		file.write(self.name.encode() + b"\0")  # # self.name -- TODO: wip - encode("UTF-8")
 		# (self, s: Union[bytes, bytearray])
 
@@ -237,7 +254,7 @@ class s3o_piece(object):
 		# save children
 		for c in self.children:
 			childOffsetList.append(file.tell())
-			c.save(file)
+			c.save(file, remove_suffix)
 		# write child offset list
 		self.childrenOffset = file.tell()
 		for c in childOffsetList:
@@ -426,13 +443,13 @@ def apply_modifiers(obj):
 		obj.modifiers.remove(m)
 
 
-def save_s3o_file	(s3o_filename,
-					context,
-					use_selection=False,
-					use_mesh_modifiers=False,
-					use_triangles=False,
-					remove_suffix=True
-					):
+def save_s3o_file(s3o_filename,
+				  context,
+				  use_selection=False,
+				  use_mesh_modifiers=False,
+				  use_triangles=False,
+				  remove_suffix=True
+				 ):
 
 	######
 	texture1Name = "armota_tex1"
@@ -479,6 +496,7 @@ def save_s3o_file	(s3o_filename,
 	# get the radius from the SpringRadius empty sphere size
 	pieces = []
 	parentChildren = {}   # dictionary
+
 	for obj in bpy.data.objects:
 		if 'SpringRadius' in obj.name:
 			header.radius = obj.empty_display_size # dimensions[0]  # getSize()
@@ -496,7 +514,7 @@ def save_s3o_file	(s3o_filename,
 			if not (obj in selection): #  != bpy.context.object:
 				continue
 			else:
-				print(obj.name+" in selection!")
+				print("\t\t"+obj.name+" in selection!")
 
 		if obj.type == 'ARMATURE':
 			continue
@@ -527,20 +545,6 @@ def save_s3o_file	(s3o_filename,
 			# TODO: Add undo for each destructive operation
 			piece.mesh = obj  # # Test
 			piece.name = obj.name
-			if remove_suffix:
-				split_name = piece.name.split(".")
-				split_name_len = len(split_name)
-				if split_name_len > 1:
-					suffix = split_name[-1]  # last element (eg: 001 within thruster.L.001)
-					if suffix.isdigit():
-						new_name = ""
-						for i in range(split_name_len):
-							if i < (split_name_len - 1):
-								if i > 0:
-									new_name = new_name + "."
-								new_name = new_name + split_name[i]
-						print("\tBlender name: " + obj.name + ", saved name: " + new_name)
-						piece.name = new_name
 			piece.verts = []
 			piece.polygons = []
 			print("-----------------------------")
@@ -595,7 +599,7 @@ def save_s3o_file	(s3o_filename,
 	rootPiece = ProcessPiece(rootPiece, scene)
 
 	header.rootPieceOffset = file.tell()
-	rootPiece.save(file)
+	rootPiece.save(file, remove_suffix)
 
 	# save the texture names and write their offsets in the header
 	if header.texture1:
