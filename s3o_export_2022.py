@@ -1,12 +1,17 @@
 import bmesh
 import bpy
+from bpy import context
+import math
 import mathutils
 from mathutils import Matrix
+from mathutils import Vector
 import time
 from bpy.props import BoolProperty, StringProperty  # , EnumProperty
 import os
 import struct
 from math import radians
+import numpy as np
+import itertools
 
 # from struct import calcsize, unpack
 
@@ -214,7 +219,6 @@ class s3o_piece(object):
 		# write name
 		self.nameOffset = file.tell()
 
-		## TODO: Rename 'name' here
 		if remove_suffix:
 			split_name = self.name.split(".")
 			split_name_len = len(split_name)
@@ -448,27 +452,99 @@ def save_s3o_file(s3o_filename,
 				  use_selection=False,
 				  use_mesh_modifiers=False,
 				  use_triangles=False,
-				  remove_suffix=True
+				  remove_suffix=True,
+				  texture1_name="texture1.dds",
+				  texture2_name="texture2.dds"
 				 ):
 
+	# # snippet from: https://b3d.interplanety.org/en/how-to-calculate-the-bounding-sphere-for-selected-objects/
+	def estimateSpringRadius(objects):
+		def bounding_sphere(objects):
+
+			# select all objects in the scene and assign it to the objects variable
+			objects = bpy.context.scene.objects
+
+			points_co_global = []
+			print("Amount of objects: " + str(len(objects)))
+
+			# for this_obj in objects:
+			#points_co_global.extend([this_obj.matrix_world @ vertex.co for vertex in this_obj.data.vertices])
+
+			# multiply 3d coord list by matrix
+			def np_matmul_coords(coords, matrix, space=None):
+				M = (space @ matrix @ space.inverted()
+					 if space else matrix).transposed()
+				ones = np.ones((coords.shape[0], 1))
+				coords4d = np.hstack((coords, ones))
+
+				return np.dot(coords4d, M)[:, :-1]
+				return coords4d[:, :-1]
+
+			# get the global coordinates of all object bounding box corners
+			coords = np.vstack(
+				tuple(np_matmul_coords(np.array(o.bound_box), o.matrix_world.copy())
+					  for o in
+						  objects # context.scene.objects
+						  if o.type == 'MESH'
+					  )
+			)
+			# bottom front left (all the mins)
+			bfl = coords.min(axis=0)
+			# top back right
+			tbr = coords.max(axis=0)
+
+			G = np.array((bfl, tbr)).T
+			# bound box coords ie the 8 combinations of bfl tbr.
+			bbc = [i for i in itertools.product(*G)]
+
+			center = ((bfl[0] + tbr[0]) / 2, (bfl[1] + tbr[1]) / 2, (bfl[2] + tbr[2]) / 2)
+			all_corners = np.array(bbc)
+
+			max_radius = 0
+			for el in all_corners:
+				# print(el)
+				this_radius = math.sqrt(
+					(el[0] - center[0]) ** 2 + (el[1] - center[1]) ** 2 + (el[2] - center[2]) ** 2)
+				if this_radius > max_radius:
+					max_radius = this_radius
+			# print( "BFL: "+str(bfl) )
+			# print( "TBR: "+str(tbr) )
+
+			bpy.ops.object.empty_add(type='SPHERE', location=center, radius=max_radius)
+			new_empty = bpy.context.object
+			new_empty.name = "BBoxCenterEmpty"
+
+			return center, max_radius  # .length
+
+		# bpy.ops.mesh.select_all(action='SELECT')
+		b_sphere_co, b_sphere_radius = bounding_sphere(objects=objects)
+		header.radius = b_sphere_radius  #50
+		header.midx = b_sphere_co[0]
+		header.midy = b_sphere_co[1]
+		header.midz = b_sphere_co[2]
+		print("\n\n\tEstimated SpringRadius: "+str(b_sphere_radius)+"\n\n")
+
 	######
-	texture1Name = "armota_tex1"
-	texture2Name = "armota_tex2"
+	# texture1_name = "texture1.dds"
+	# texture2_name = "texture2.dds"
 	print("\n")
 	print("Use selection: " + str(use_selection)
 	      + ", Use meshmods: " + str(use_mesh_modifiers)
 	      + ", Use triangles: " + str(use_triangles)
 		  + ", Remove Suffix: " + str(remove_suffix)
+		  + ", Texture1 Name: " + str(texture1_name)
+		  + ", Texture2 Name: " + str(texture2_name)
 	      )
 
 	objdir = os.path.dirname(s3o_filename)
 	rootdir = folder_root(objdir, "objects3d")
-	texsdir = ""
-	# TODO: Add support for textures dir (texsdir)
-	if rootdir is None:
-		texsdir = objdir
-	else:
-		texsdir = os.path.join(rootdir, find_in_folder(rootdir, 'unittextures'))
+
+	# # OBSOLETE: There are two string fields on the exporter to set texture names now
+	# texsdir = ""
+	# if rootdir is None:
+	# 	texsdir = objdir
+	# else:
+	# 	texsdir = os.path.join(rootdir, find_in_folder(rootdir, 'unittextures'))
 
 	header = s3o_header()
 
@@ -479,8 +555,8 @@ def save_s3o_file(s3o_filename,
 	# # material = Material.Get('SpringMat')
 	# # textures = material.getTextures()
 	# # We're just assigning default texture names now. Easy to change in UpSpring.
-	header.texture1 = texture1Name  #"texture1"  # os.path.basename(textures[0].tex.image.getFilename())
-	header.texture2 = texture2Name  #"texture2"  # os.path.basename(textures[1].tex.image.getFilename())
+	header.texture1 = texture1_name  #"texture1"  # os.path.basename(textures[0].tex.image.getFilename())
+	header.texture2 = texture2_name  #"texture2"  # os.path.basename(textures[1].tex.image.getFilename())
 	# print("texture1: " + header.texture1)
 	# print("texture2: " + header.texture2)
 
@@ -569,9 +645,10 @@ def save_s3o_file(s3o_filename,
 
 	# # No longer aborts if these objects weren't found.
 	if not foundRadius:
-		print("Could not find SpringRadius object. Using Default Values.")
+		print("Could not find SpringRadius object. Estimating Values.")
+		estimateSpringRadius(selection)
 	if not foundHeight:
-		print("Could not find SpringHeight object. Using Default Value.")
+		print("Could not find SpringHeight object. Estimating Value.")
 
 	# # find the piece with no parent and set it as the Root
 	rootPiece = None
@@ -655,6 +732,16 @@ class ExportS3O(bpy.types.Operator, ExportHelper):
 		default=True
 	)
 
+	texture1_name: StringProperty(
+		default="texture1.dds",
+		options={"TEXTEDIT_UPDATE"},
+	)
+
+	texture2_name: StringProperty(
+		default="texture2.dds",
+		options={"TEXTEDIT_UPDATE"},
+	)
+
 	def execute(self, context):
 		# Convert all properties into a dictionary, to be passed by ** (unpack)
 		# keywords = self.as_keywords(ignore=("axis_forward",
@@ -687,7 +774,9 @@ class ExportS3O(bpy.types.Operator, ExportHelper):
 		               self.use_selection,
 		               self.use_mesh_modifiers,
 		               self.use_triangles,
-					   self.remove_suffix
+					   self.remove_suffix,
+					   self.texture1_name,
+					   self.texture2_name
 		               )
 
 		bpy.ops.object.select_all(action="DESELECT")
