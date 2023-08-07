@@ -457,8 +457,8 @@ def save_s3o_file(s3o_filename,
 				  texture2_name="texture2.dds"
 				 ):
 
-	# # snippet from: https://b3d.interplanety.org/en/how-to-calculate-the-bounding-sphere-for-selected-objects/
-	def estimateSpringRadius(objects):
+	# # modified from snippet: https://blender.stackexchange.com/questions/223858/how-do-i-get-the-bounding-box-of-all-objects-in-a-scene
+	def estimateSpringRadiusHeight(objects):
 		def bounding_sphere(objects):
 
 			# select all objects in the scene and assign it to the objects variable
@@ -514,15 +514,17 @@ def save_s3o_file(s3o_filename,
 			new_empty = bpy.context.object
 			new_empty.name = "BBoxCenterEmpty"
 
-			return center, max_radius  # .length
+			return center, max_radius, abs(tbr[2] - bfl[2])  # Top-bottom-right Z axis, minus Bottom-front-left Z axis = height
 
 		# bpy.ops.mesh.select_all(action='SELECT')
-		b_sphere_co, b_sphere_radius = bounding_sphere(objects=objects)
+		b_sphere_co, b_sphere_radius, b_sphere_height = bounding_sphere(objects=objects)
 		header.radius = b_sphere_radius  #50
 		header.midx = b_sphere_co[0]
-		header.midy = b_sphere_co[1]
-		header.midz = b_sphere_co[2]
-		print("\n\n\tEstimated SpringRadius: "+str(b_sphere_radius)+"\n\n")
+		header.midy = b_sphere_co[2]	# We need to switch Y & Z, for Upspring/Spring compatible orientation
+		header.midz = b_sphere_co[1]
+
+		header.height = b_sphere_height
+		print("\n\n\tEstimated SpringRadius: "+str(b_sphere_radius)+", SpringHeight: "+str(b_sphere_height)+"\n\n")
 
 	######
 	# texture1_name = "texture1.dds"
@@ -608,11 +610,6 @@ def save_s3o_file(s3o_filename,
 			bmesh.update_edit_mesh(mesh) #, True
 			bpy.ops.object.mode_set(mode='OBJECT')
 
-		# #TODO: Remove. Brute Force test
-		# origin = bpy.data.objects['SceneRoot']
-		# origin.rotation_euler[0] = radians(-90)     # ZXY rotation order
-		# origin.rotation_euler[1] = radians(180)     # ZXY rotation order
-
 		piece = s3o_piece()
 		#########################################
 		# go through all mesh objects and empties, then convert them to s3o_pieces and set origins (as offsets)
@@ -644,39 +641,37 @@ def save_s3o_file(s3o_filename,
 			pieces.append(piece)
 
 	# # No longer aborts if these objects weren't found.
-	if not foundRadius:
-		print("Could not find SpringRadius object. Estimating Values.")
-		estimateSpringRadius(selection)
-	if not foundHeight:
-		print("Could not find SpringHeight object. Estimating Value.")
+	if not foundRadius or not foundHeight:
+		print("Could not find SpringRadius and/or SpringHeight objects. Estimating Values.")
+		estimateSpringRadiusHeight(selection)
 
 	# # find the piece with no parent and set it as the Root
-	rootPiece = None
+	root_piece = None
 	for p in pieces:
 		if p.name in parentChildren:    # if it's a parent of another piece
 			p.children = parentChildren[p.name]   # copy/assign the 'children' array stored in parentChildren for that parent
 		if p.parent is None and ('SpringRadius' not in p.name) and ('SpringHeight' not in p.name):  # p.parent == ''
-			rootPiece = p
-			print("Root = [" + rootPiece.name + "]")
+			root_piece = p
+			print("Root = [" + root_piece.name + "]")
 
-	if rootPiece is None:
-		print("No root object found. Aborting")
+	if root_piece is None:
+		print("ERROR: No root object found! Aborting")
 		return
 
 	try:
 		file = open(s3o_filename, "wb")
 	except IOError:
-		print("Cannot open " + s3o_filename + " for writing")
+		print("ERROR: Cannot open " + s3o_filename + " for writing")
 		return
 
 	# skip forward the size of the header, we'll come back later to write the header
 	file.seek(struct.calcsize(header.binary_format), os.SEEK_CUR)
 
 	# Do the required geometric manipulations to the hierarchy of pieces
-	rootPiece = ProcessPiece(rootPiece, scene)
+	root_piece = ProcessPiece(root_piece, scene)
 
 	header.rootPieceOffset = file.tell()
-	rootPiece.save(file, remove_suffix)
+	root_piece.save(file, remove_suffix)
 
 	# save the texture names and write their offsets in the header
 	if header.texture1:
