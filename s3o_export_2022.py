@@ -37,6 +37,8 @@ bl_info = {
 	"category": "Import-Export",
 }
 
+SPLIT_UVS = True
+
 try:
 	os.SEEK_SET
 except AttributeError:
@@ -307,8 +309,8 @@ class s3o_vert(object):
 	xnormal = 0.0
 	ynormal = 0.0
 	znormal = 0.0
-	texu = 0.0
-	texv = 0.0
+	texu = float (0)  # 0.0
+	texv = float(0)   # 0.0
 
 	def save(self, file):
 		data = struct.pack(self.binary_format,
@@ -359,32 +361,52 @@ def ProcessPiece(piece, scene):  # Empty or Mesh, will recurse through children
 
 		# Split polygons by UV islands (to prevent the shared/synced UVs issue in S3Os)
 		# From: https://blender.stackexchange.com/questions/73647/python-bmesh-for-loop-breaking-trying-to-split-mesh-via-uv-islands
-		bpy.ops.object.mode_set(mode='EDIT')
-		bm = bmesh.from_edit_mesh(mesh)
-		bm.select_mode = {'FACE'}
-		faceGroups = []
-		bpy.ops.mesh.select_mode(use_extend=False, use_expand=False, type='FACE')
-		save_sync = scene.tool_settings.use_uv_select_sync
-		scene.tool_settings.use_uv_select_sync = True
-		faces = set(bm.faces[:])
-		while faces:
-			bpy.ops.mesh.select_all(action='DESELECT')
-			face = faces.pop()
-			face.select = True
-			bpy.ops.uv.select_linked()
-			selected_faces = {f for f in faces if f.select}
-			selected_faces.add(face)  # this or bm.faces above?
-			faceGroups.append(selected_faces)
-			faces -= selected_faces
-		scene.tool_settings.use_uv_select_sync = save_sync
-		for g in faceGroups:
-			bpy.ops.mesh.select_all(action='DESELECT')
-			for f in g:
-				f.select = True
-			bpy.ops.mesh.split()
-		mesh.update()
-		bpy.ops.object.mode_set(mode='OBJECT')
+		if SPLIT_UVS:
+			bpy.ops.object.mode_set(mode='EDIT')
+			bm = bmesh.from_edit_mesh(mesh)
+			bm.select_mode = {'FACE'}
+			faceGroups = []
+			bpy.ops.mesh.select_mode(use_extend=False, use_expand=False, type='FACE')
+			save_sync = scene.tool_settings.use_uv_select_sync
+			scene.tool_settings.use_uv_select_sync = True
+			faces = set(bm.faces[:])
+			while faces:
+				bpy.ops.mesh.select_all(action='DESELECT')
+				face = faces.pop()
+				face.select = True
+				bpy.ops.uv.select_linked()
+				selected_faces = {f for f in faces if f.select}
+				selected_faces.add(face)  # this or bm.faces above?
+				faceGroups.append(selected_faces)
+				faces -= selected_faces
+			scene.tool_settings.use_uv_select_sync = save_sync
+			for g in faceGroups:
+				bpy.ops.mesh.select_all(action='DESELECT')
+				for f in g:
+					f.select = True
+				bpy.ops.mesh.split()
+			mesh.update()
+			bpy.ops.object.mode_set(mode='OBJECT')
 
+			#### Optional algorithm, experiments only
+			# bpy.ops.object.mode_set(mode='EDIT')
+			# bm = bmesh.from_edit_mesh(mesh)
+			# # old seams
+			# old_seams = [e for e in bm.edges if e.seam]
+			# # unmark
+			# for e in old_seams:
+			# 	e.seam = False
+			# # mark seams from uv islands
+			# bpy.ops.mesh.select_all(action='SELECT')  # NEW LINE!!!
+			# bpy.ops.uv.select_all(action='SELECT')  # NEW LINE!!!
+			# bpy.ops.uv.seams_from_islands()
+			# seams = [e for e in bm.edges if e.seam]
+			# # split on seams
+			# bmesh.ops.split_edges(bm, edges=seams)
+			# # re instate old seams.. could clear new seams.
+			# for e in old_seams:
+			# 	e.seam = True
+			# bmesh.update_edit_mesh(mesh)
 
 		# piece.verts = []
 		# piece.polygons = []
@@ -412,6 +434,11 @@ def ProcessPiece(piece, scene):  # Empty or Mesh, will recurse through children
 				vert.znormal = v.normal.z
 				piece.verts.append(vert)
 			print("Exported " + str(len(piece.verts)) + " verts")
+			# # Merge Back (that'd be only for poly export really)
+			# bpy.ops.object.mode_set(mode='EDIT')
+			# bpy.ops.mesh.select_all(action='SELECT')
+			# bpy.ops.mesh.remove_doubles(threshold=0.05)  # merge_threshold
+			# bpy.ops.object.mode_set(mode='OBJECT')
 			for tri in mesh.loop_triangles:     # polygons
 				faceIndices = []
 				for loop_index in tri.loops:     # loop_indices # range(poly.loop_start, poly.loop_start + poly.loop_total):
@@ -453,21 +480,22 @@ def save_s3o_file(s3o_filename,
 				  use_mesh_modifiers=False,
 				  use_triangles=False,
 				  remove_suffix=True,
-				  texture1_name="texture1.dds",
-				  texture2_name="texture2.dds"
+				  texture1_name="corota_tex1.dds",  #"texture1.dds",
+				  texture2_name="corota_tex2.dds"   #"texture2.dds"
 				 ):
 
 	# # modified from snippet: https://blender.stackexchange.com/questions/223858/how-do-i-get-the-bounding-box-of-all-objects-in-a-scene
 	def estimateSpringRadiusHeight(objects):
-		def bounding_sphere(objects):
+		def bounding_sphere(objs):
 
 			# select all objects in the scene and assign it to the objects variable
-			objects = bpy.context.scene.objects
+			if objs is None or len(objs) < 1:
+				objs = bpy.context.scene.objects
 
 			points_co_global = []
-			print("Amount of objects: " + str(len(objects)))
+			print("Amount of objects: " + str(len(objs)))
 
-			# for this_obj in objects:
+			# for this_obj in obj:
 			#points_co_global.extend([this_obj.matrix_world @ vertex.co for vertex in this_obj.data.vertices])
 
 			# multiply 3d coord list by matrix
@@ -484,8 +512,8 @@ def save_s3o_file(s3o_filename,
 			coords = np.vstack(
 				tuple(np_matmul_coords(np.array(o.bound_box), o.matrix_world.copy())
 					  for o in
-						  objects # context.scene.objects
-						  if o.type == 'MESH'
+					  objs  # context.scene.objects
+					  if o.type == 'MESH'
 					  )
 			)
 			# bottom front left (all the mins)
@@ -510,14 +538,15 @@ def save_s3o_file(s3o_filename,
 			# print( "BFL: "+str(bfl) )
 			# print( "TBR: "+str(tbr) )
 
-			bpy.ops.object.empty_add(type='SPHERE', location=center, radius=max_radius)
-			new_empty = bpy.context.object
-			new_empty.name = "BBoxCenterEmpty"
+			### Use below just for automatic radius/height estimation debug purposes, within Blender
+			# bpy.ops.object.empty_add(type='SPHERE', location=center, radius=max_radius)
+			# new_empty = bpy.context.object
+			# new_empty.name = "BBoxCenterEmpty"
 
 			return center, max_radius, abs(tbr[2] - bfl[2])  # Top-bottom-right Z axis, minus Bottom-front-left Z axis = height
 
 		# bpy.ops.mesh.select_all(action='SELECT')
-		b_sphere_co, b_sphere_radius, b_sphere_height = bounding_sphere(objects=objects)
+		b_sphere_co, b_sphere_radius, b_sphere_height = bounding_sphere(objs=objects)
 		header.radius = b_sphere_radius  #50
 		header.midx = b_sphere_co[0]
 		header.midy = b_sphere_co[2]	# We need to switch Y & Z, for Upspring/Spring compatible orientation
