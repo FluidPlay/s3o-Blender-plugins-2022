@@ -783,6 +783,25 @@ class ExportS3O(bpy.types.Operator, ExportHelper):
 		print("#### Begin Export ####")
 		print("######################\n")
 
+		my_obj = None
+		for obj in bpy.data.objects:
+			if 'SpringRadius' in obj.name:
+				continue
+			if 'SpringHeight' in obj.name:
+				continue
+
+			if obj.parent == None and (obj.type == 'EMPTY' or obj.type == 'MESH'):
+				my_obj = obj
+				break
+
+		if my_obj == None:
+			raise Exception("No object found")
+
+		if my_obj != None:
+			if self.texture1_name == "texture1.dds":
+				self.texture1_name = my_obj["s3o_texture1"]
+			if self.texture2_name == "texture2.dds":
+				self.texture2_name = my_obj["s3o_texture2"]
 
 		# setting active object if there is no active object
 		if context.mode != "OBJECT":
@@ -804,6 +823,10 @@ class ExportS3O(bpy.types.Operator, ExportHelper):
 		               )
 
 		bpy.ops.object.select_all(action="DESELECT")
+
+		if my_obj != None:
+			my_obj["s3o_texture1"] = self.texture1_name
+			my_obj["s3o_texture2"] = self.texture2_name
 
 		print("\n######################")
 		print("Ding! Export Complete in %s seconds" % (time.time() - start_time))

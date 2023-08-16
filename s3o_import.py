@@ -221,7 +221,7 @@ class s3o_piece(object):
     yoffset = 0.0
     zoffset = 0.0
 
-    def load(self, fhandle, offset, material):
+    def load(self, fhandle, offset, material, tex1 : str = "", tex2 : str = ""):
         fhandle.seek(offset, os.SEEK_SET)
         tmp_data = fhandle.read(struct.calcsize(self.binary_format))
         data = struct.unpack(self.binary_format, tmp_data)
@@ -337,6 +337,10 @@ class s3o_piece(object):
             for face in self.mesh.polygons:
                 face.material_index = matidx
     
+        if tex1 != "" and tex2 != "":
+            self.ob["s3o_texture1"] = tex1
+            self.ob["s3o_texture2"] = tex2
+
         if(self.parent):
             self.ob.parent = self.parent.ob
         self.ob.location = [self.xoffset, self.yoffset, self.zoffset]
@@ -516,7 +520,7 @@ def load_s3o_file(s3o_filename, BATCH_LOAD=False):
     mat = new_material(header.texture1, header.texture2, texsdir, name=basename)
 
     rootPiece = s3o_piece()
-    rootPiece.load(fhandle, header.rootPieceOffset, mat)
+    rootPiece.load(fhandle, header.rootPieceOffset, mat, header.texture1, header.texture2)
 
     # create collision sphere
     existing_objects = bpy.data.objects[:]
