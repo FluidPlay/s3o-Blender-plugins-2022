@@ -280,8 +280,9 @@ class s3o_piece(object):
 
         # if it has no verts or faces create an EMPTY instead
         if(self.numVerts == 0):
+            existing_objects = bpy.data.objects[:]
             bpy.ops.object.empty_add(type="PLAIN_AXES", location=(0, 0, 0))
-            self.ob = bpy.context.active_object
+            self.ob = set(bpy.data.objects).difference(existing_objects).pop()            
             self.ob.name = self.name
         else:
             bm = bmesh.new()
@@ -325,11 +326,10 @@ class s3o_piece(object):
             except AttributeError:
                 # Blender < 2.80
                 bpy.context.scene.objects.active = self.ob                
-            if bpy.context.object is not None: # NoneType objects can get here recently.
-                #bpy.ops.object.shade_smooth()
-                if hasattr(bpy.context.object.data, "use_auto_smooth"):
-                    bpy.context.object.data.use_auto_smooth = False
-                    # bpy.context.object.data.auto_smooth_angle = 0.785398 # 45 degrees, better than 30 for low poly stuff.
+
+            if hasattr(self.ob, "use_auto_smooth"):
+                self.ob.use_auto_smooth = False
+                # bpy.context.object.data.auto_smooth_angle = 0.785398 # 45 degrees, better than 30 for low poly stuff.
 
             matidx = len(self.ob.data.materials)
             self.ob.data.materials.append(material) 
@@ -433,6 +433,10 @@ def new_material(tex1, tex2, texsdir, name="Material"):
 
     mat = bpy.data.materials.new(name=name + '.mat')
     mat.use_nodes = True
+    
+    # shader_mix = mat.node_tree.nodes.new("ShaderNodeMixShader")
+    # input_group = mat.node_tree.nodes.new('NodeGroupInput')
+
     principled = mat.node_tree.nodes["Principled BSDF"]
     principled.inputs['Base Color'].default_value = (1.0, 1.0, 1.0, 1.0)
     if(tex1 or tex2):
@@ -495,8 +499,8 @@ def new_material(tex1, tex2, texsdir, name="Material"):
     return mat
 
 
-def load_s3o_file(s3o_filename, context, BATCH_LOAD=False):
-    basename = os.path.basename(s3o_filename)
+def load_s3o_file(s3o_filename, BATCH_LOAD=False):
+    basename = os.path.splitext(os.path.basename(s3o_filename))[0]
     objdir = os.path.dirname(s3o_filename)
     rootdir = folder_root(objdir, "objects3d")
     if rootdir is None:
@@ -515,14 +519,19 @@ def load_s3o_file(s3o_filename, context, BATCH_LOAD=False):
     rootPiece.load(fhandle, header.rootPieceOffset, mat)
 
     # create collision sphere
+    existing_objects = bpy.data.objects[:]
     bpy.ops.object.empty_add(type="SPHERE",
                              location=(header.midx, header.midz, header.midy),
                              radius=header.radius)
-    bpy.context.active_object.name = basename + '.SpringRadius'
+    new_object = set(bpy.data.objects).difference(existing_objects).pop()
+    new_object.name = basename + '.SpringRadius'
+
+    existing_objects = bpy.data.objects[:]
     bpy.ops.object.empty_add(type="ARROWS",
                              location=(header.midx, header.midz, header.midy),
                              radius=10.0)
-    bpy.context.active_object.name = basename + '.SpringHeight'
+    new_object = set(bpy.data.objects).difference(existing_objects).pop()
+    new_object.name = basename + '.SpringRadius'
 
     fhandle.close()
     return
@@ -551,7 +560,7 @@ class ImportS3O(bpy.types.Operator, ImportHelper):
             bpy.ops.object.mode_set(mode="OBJECT")
         bpy.ops.object.select_all(action="DESELECT")
         
-        load_s3o_file(self.filepath, context)
+        load_s3o_file(self.filepath)
         
         bpy.ops.object.select_all(action="DESELECT")
         return {"FINISHED"}
@@ -559,7 +568,7 @@ class ImportS3O(bpy.types.Operator, ImportHelper):
 
 # Only needed if you want to add into a dynamic menu
 def menu_func_import(self, context):
-    self.layout.operator(ImportS3O.bl_idname, text="Spring ZY(.s3o)")
+    self.layout.operator(ImportS3O.bl_idname, text="Spring (.s3o)")
 
 
 def register():
