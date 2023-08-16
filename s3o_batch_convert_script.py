@@ -7,22 +7,22 @@ import bpy
 import os
 import s3o_import
 
-IMPORT_DIR = "~/Projekte/techannihilation/TA/objects3d/arm"
-EXPORT_DIR = "~/Desktop/TA/objects3d/arm"
+IMPORT_DIR = "/home/pcdummy/Projekte/techannihilation/TA/objects3d/arm"
+EXPORT_DIR = "/home/pcdummy/Desktop/TA/objects3d/arm"
 
-def file_iter(path, ext):
-    for dirpath, dirnames, filenames in os.walk(path):
+def file_iter(path, par_ext):
+    for dirpath, _, filenames in os.walk(path):
         for filename in filenames:
             ext = os.path.splitext(filename)[1]
-            if ext.lower().endswith(ext):
+            if ext.lower() == par_ext:
                 yield os.path.join(dirpath, filename)
 
 def reset_blend():
     bpy.ops.wm.read_factory_settings(use_empty=True)
 
-def convert_recursive(base_path):
-    for filepath_src in file_iter(base_path, ".s3o"):
-        filepath_dst = os.path.join(EXPORT_DIR, os.path.splitext(os.path.basename(filepath_src))[0] + ".blend")
+def convert_recursive(par_import_path : str, par_export_path : str):
+    for filepath_src in file_iter(par_import_path, ".s3o"):
+        filepath_dst = os.path.join(par_export_path, os.path.splitext(os.path.basename(filepath_src))[0] + ".blend")
 
         if os.path.exists(filepath_dst):
             print("Existing %r -> %r" % (filepath_src, filepath_dst))
@@ -43,4 +43,4 @@ def convert_recursive(base_path):
         reset_blend()
 
 if __name__ == "__main__":
-    convert_recursive(IMPORT_DIR)
+    convert_recursive(IMPORT_DIR, EXPORT_DIR)
