@@ -1,14 +1,10 @@
 # Mass convert *.s3o to *.blend, this needs the s3o_import.py addon installed.
 #
-# Change IMPORT_DIR and EXPORT_DIR then run "blender -P s3o_batch_convert_script.py",
-# this script won't override models with the same name.
+# This script won't override models with the same name.
 
 import bpy
 import os
 import s3o_import
-
-IMPORT_DIR = "/home/pcdummy/Projekte/techannihilation/TA/objects3d/arm"
-EXPORT_DIR = "/home/pcdummy/Desktop/TA/objects3d/arm"
 
 def file_iter(path, par_ext):
     for dirpath, _, filenames in os.walk(path):
@@ -43,4 +39,5 @@ def convert_recursive(par_import_path : str, par_export_path : str):
         reset_blend()
 
 if __name__ == "__main__":
-    convert_recursive(IMPORT_DIR, EXPORT_DIR)
+    import sys
+    convert_recursive(sys.argv[5], sys.argv[6])
