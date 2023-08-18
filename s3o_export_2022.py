@@ -27,8 +27,8 @@ bl_info = {
 	"name": "Export Spring S3O Object (.s3o)",
 	"author": "Jez Kabanov and Breno 'MaDDoX' Azevedo <jlcercos@gmail.com> and <maddox.br@gmail.com>",
 	"version": (0, 7, 1),
-	"blender": (3, 10, 0),
-	"location": "File > Export > Spring S3O Object (.s3o)",
+	"blender": (3, 6, 0),
+	"location": "File > Export > Spring (.s3o)",
 	"description": "Exports a file in the Spring S3O format",
 	"warning": "",
 	"wiki_url": "https://springrts.com/wiki/About_s3o",
@@ -351,71 +351,69 @@ def ProcessPiece(piece, scene):  # Empty or Mesh, will recurse through children
 	# For 3D meshes, export the geometry
 	#########################################
 	if obj.type == 'MESH':
+		obj.select_set(state=True)
 		bpy.context.view_layer.objects.active = obj
-		mesh = obj.data
 
+		mesh = obj.data
 		mesh.update()
-		# bpy.ops.object.mode_set(mode='EDIT')
-		# bmesh.update_edit_mesh(mesh)  # , True
-		# bpy.ops.object.mode_set(mode='OBJECT')
 
 		# Split polygons by UV islands (to prevent the shared/synced UVs issue in S3Os)
 		# From: https://blender.stackexchange.com/questions/73647/python-bmesh-for-loop-breaking-trying-to-split-mesh-via-uv-islands
-		if SPLIT_UVS:
-			bpy.ops.object.mode_set(mode='EDIT')
-			bm = bmesh.from_edit_mesh(mesh)
-			bm.select_mode = {'FACE'}
-			faceGroups = []
-			bpy.ops.mesh.select_mode(use_extend=False, use_expand=False, type='FACE')
-			save_sync = scene.tool_settings.use_uv_select_sync
-			scene.tool_settings.use_uv_select_sync = True
-			faces = set(bm.faces[:])
-			while faces:
-				bpy.ops.mesh.select_all(action='DESELECT')
-				face = faces.pop()
-				face.select = True
-				bpy.ops.uv.select_linked()
-				selected_faces = {f for f in faces if f.select}
-				selected_faces.add(face)  # this or bm.faces above?
-				faceGroups.append(selected_faces)
-				faces -= selected_faces
-			scene.tool_settings.use_uv_select_sync = save_sync
-			for g in faceGroups:
-				bpy.ops.mesh.select_all(action='DESELECT')
-				for f in g:
-					f.select = True
-				bpy.ops.mesh.split()
-			mesh.update()
-			bpy.ops.object.mode_set(mode='OBJECT')
-
-			#### Optional algorithm, experiments only
+		if SPLIT_UVS and len(obj.data.uv_layers):
 			# bpy.ops.object.mode_set(mode='EDIT')
 			# bm = bmesh.from_edit_mesh(mesh)
-			# # old seams
-			# old_seams = [e for e in bm.edges if e.seam]
-			# # unmark
-			# for e in old_seams:
-			# 	e.seam = False
-			# # mark seams from uv islands
-			# bpy.ops.mesh.select_all(action='SELECT')  # NEW LINE!!!
-			# bpy.ops.uv.select_all(action='SELECT')  # NEW LINE!!!
-			# bpy.ops.uv.seams_from_islands()
-			# seams = [e for e in bm.edges if e.seam]
-			# # split on seams
-			# bmesh.ops.split_edges(bm, edges=seams)
-			# # re instate old seams.. could clear new seams.
-			# for e in old_seams:
-			# 	e.seam = True
-			# bmesh.update_edit_mesh(mesh)
+			# bm.select_mode = {'FACE'}
+			# faceGroups = []
+			# bpy.ops.mesh.select_mode(use_extend=False, use_expand=False, type='FACE')
+			# save_sync = scene.tool_settings.use_uv_select_sync
+			# scene.tool_settings.use_uv_select_sync = True
+			# faces = set(bm.faces[:])
+			# while faces:
+			# 	bpy.ops.mesh.select_all(action='DESELECT')
+			# 	face = faces.pop()
+			# 	face.select = True
+				
+			# 	bpy.ops.uv.select_linked()
 
-		# piece.verts = []
-		# piece.polygons = []
-		if not len(obj.data.uv_layers):
-			print("UV coordinates not found! Did you unwrap this object?") # Auto-unwrapping.")
-			#TODO: Auto-unwrap to avoid errors
+			# 	selected_faces = {f for f in faces if f.select}
+			# 	selected_faces.add(face)  # this or bm.faces above?
+			# 	faceGroups.append(selected_faces)
+			# 	faces -= selected_faces
+			# 	scene.tool_settings.use_uv_select_sync = save_sync
+			# 	for g in faceGroups:
+			# 		bpy.ops.mesh.select_all(action='DESELECT')
+			# 		for f in g:
+			# 			f.select = True
+			# 		bpy.ops.mesh.split()
+
+			# mesh.update()
 			# bpy.ops.object.mode_set(mode='OBJECT')
-			# bpy.ops.uv.smart_project()
-		else:
+
+			#### Optional algorithm, experiments only
+			try:
+				bpy.ops.object.mode_set(mode='EDIT')
+				bm = bmesh.from_edit_mesh(mesh)
+				# old seams
+				old_seams = [e for e in bm.edges if e.seam]
+				# unmark
+				for e in old_seams:
+					e.seam = False
+				# mark seams from uv islands
+				bpy.ops.mesh.select_all(action='SELECT')  # NEW LINE!!!
+				bpy.ops.uv.select_all(action='SELECT')   # NEW LINE!!!
+				bpy.ops.uv.seams_from_islands()
+				seams = [e for e in bm.edges if e.seam]
+				# split on seams
+				bmesh.ops.split_edges(bm, edges=seams)
+				# re instate old seams.. could clear new seams.
+				for e in old_seams:
+					e.seam = True
+				bmesh.update_edit_mesh(mesh)
+				bpy.ops.object.mode_set(mode='OBJECT')
+			except RuntimeError:
+				# Happens on: bpy.ops.uv.select_all(action='SELECT'), not sure why.
+				pass
+
 			mesh.calc_loop_triangles()
 			uv_layer = mesh.uv_layers.active.data
 
@@ -798,9 +796,9 @@ class ExportS3O(bpy.types.Operator, ExportHelper):
 			raise Exception("No object found")
 
 		if my_obj != None:
-			if self.texture1_name == "texture1.dds":
+			if self.texture1_name == "texture1.dds" and "s3o_texture1" in my_obj:
 				self.texture1_name = my_obj["s3o_texture1"]
-			if self.texture2_name == "texture2.dds":
+			if self.texture2_name == "texture2.dds" and "s3o_texture2" in my_obj:
 				self.texture2_name = my_obj["s3o_texture2"]
 
 		# setting active object if there is no active object
@@ -814,13 +812,13 @@ class ExportS3O(bpy.types.Operator, ExportHelper):
 
 		# # ====== Actually export the s3o file
 		save_s3o_file( self.filepath, context,
-		               self.use_selection,
-		               self.use_mesh_modifiers,
-		               self.use_triangles,
-					   self.remove_suffix,
-					   self.texture1_name,
-					   self.texture2_name
-		               )
+					self.use_selection,
+					self.use_mesh_modifiers,
+					self.use_triangles,
+					self.remove_suffix,
+					self.texture1_name,
+					self.texture2_name
+					)
 
 		bpy.ops.object.select_all(action="DESELECT")
 

@@ -16,8 +16,8 @@ bl_info = {
     "name": "Import Spring S3O (.s3o)",
     "author": "Jez Kabanov and Jose Luis Cercos-Pita <jlcercos@gmail.com> and Darloth",
     "version": (0, 7, 2),
-    "blender": (2, 80, 0),
-    "location": "File > Import > Spring S3O (.s3o)",
+    "blender": (3, 6, 0),
+    "location": "File > Import > Spring (.s3o)",
     "description": "Import a file in the Spring S3O format",
     "warning": "",
     "wiki_url": "https://springrts.com/wiki/Assimp",
@@ -294,6 +294,8 @@ class s3o_piece(object):
                 try:
                     bm.faces.new([bm.verts[self.vertids[i]] for i in f])
                 except ValueError:
+                    pass
+                except IndexError:
                     pass
                 bm.faces.ensure_lookup_table()
                 uv_layer = bm.loops.layers.uv.verify()
