@@ -623,6 +623,7 @@ def save_s3o_file(s3o_filename,
 			else:
 				print("\t\t"+obj.name+" in selection!")
 
+		#  Armature/Bones should be handled by the Skeletor plugin
 		if obj.type == 'ARMATURE':
 			continue
 
@@ -674,9 +675,11 @@ def save_s3o_file(s3o_filename,
 		print("Could not find SpringRadius and/or SpringHeight objects. Estimating Values.")
 		estimateSpringRadiusHeight(selection)
 
-	# # find the piece with no parent and set it as the Root
+	# # find the piece with no parent (inits with the first one it finds) and sets it as the Root
 	root_piece = None
 	for p in pieces:
+		if root_piece is None:
+			root_piece = p
 		if p.name in parentChildren:    # if it's a parent of another piece
 			p.children = parentChildren[p.name]   # copy/assign the 'children' array stored in parentChildren for that parent
 		if p.parent is None and ('SpringRadius' not in p.name) and ('SpringHeight' not in p.name):  # p.parent == ''
