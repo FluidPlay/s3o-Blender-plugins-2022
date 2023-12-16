@@ -427,9 +427,9 @@ def ProcessPiece(piece, scene):  # Empty or Mesh, will recurse through children
 				vert.xpos = -v.co.x # v_co.x # + objLoc[0][0]
 				vert.ypos = v.co.z # v_co.y # + objLoc[1][0]
 				vert.zpos = v.co.y # v_co.z # + objLoc[2][0] # piece.zoffset
-				vert.xnormal = v.normal.x
-				vert.ynormal = v.normal.y
-				vert.znormal = v.normal.z
+				vert.xnormal = -v.normal.x
+				vert.ynormal = v.normal.z
+				vert.znormal = v.normal.y
 				piece.verts.append(vert)
 			print("Exported " + str(len(piece.verts)) + " verts")
 			# # Merge Back (that'd be only for poly export really)
