@@ -347,6 +347,14 @@ def ProcessPiece(piece, scene):  # Empty or Mesh, will recurse through children
 		piece.yoffset = localPos[2][3] # obj.location[2] #objLoc[1]
 		piece.zoffset = localPos[1][3] # obj.location[1] #objLoc[2]
 
+	if obj.type == 'MESH':
+		bpy.context.view_layer.objects.active = obj
+		bpy.ops.object.mode_set(mode='EDIT')
+		bpy.ops.mesh.select_all(action='SELECT')
+		bpy.ops.mesh.normals_make_consistent(inside=False)
+		bpy.ops.object.mode_set(mode='OBJECT')
+
+
 	#########################################
 	# For 3D meshes, export the geometry
 	#########################################
