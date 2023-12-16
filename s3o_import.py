@@ -492,16 +492,16 @@ def new_material(tex1, tex2, texsdir, name="Material"):
         # add RGB separation node and hook up associated channels and alpha channel.  
         # R is emission, G is reflectivity (inverse roughness) and 
         # B is undefined by default.
-        split_rgb_node = mat.node_tree.nodes.new('ShaderNodeSeparateRGB')
-        mat.node_tree.links.new(split_rgb_node.inputs['Image'], tex_node.outputs['Color'])
+        # split_rgb_node = mat.node_tree.nodes.new('ShaderNodeSeparateRGB')
+        # mat.node_tree.links.new(split_rgb_node.inputs['Image'], tex_node.outputs['Color'])
         
-        mat.node_tree.links.new(principled.inputs['Emission'], split_rgb_node.outputs['R'])
+        # mat.node_tree.links.new(principled.inputs['Emission'], split_rgb_node.outputs['R'])
         
-        inverter_node = mat.node_tree.nodes.new('ShaderNodeInvert')
-        mat.node_tree.links.new(principled.inputs['Roughness'], inverter_node.outputs['Color'])
-        mat.node_tree.links.new(inverter_node.inputs['Color'], split_rgb_node.outputs['G'])
+        # inverter_node = mat.node_tree.nodes.new('ShaderNodeInvert')
+        # mat.node_tree.links.new(principled.inputs['Roughness'], inverter_node.outputs['Color'])
+        # mat.node_tree.links.new(inverter_node.inputs['Color'], split_rgb_node.outputs['G'])
         
-        mat.node_tree.links.new(tex_node.inputs['Vector'], mapping_node.outputs['Vector'])
+        # mat.node_tree.links.new(tex_node.inputs['Vector'], mapping_node.outputs['Vector'])
     return mat
 
 
