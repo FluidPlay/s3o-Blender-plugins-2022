@@ -89,6 +89,7 @@ def convert(par_filename : str):
             par_filename, 
             bpy.context,
             use_mesh_modifiers=True,
+            use_remove_base_plate=True,
             use_triangles=True,
             remove_suffix=False,
             texture1_name=texture1_name, 

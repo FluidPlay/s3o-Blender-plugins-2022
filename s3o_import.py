@@ -84,6 +84,8 @@ def folder_root(folder, name):
     index = folder.lower().find(name.lower())
     if index == -1:
         return None
+    if index == 0:
+        return os.getcwd()
     return folder[:index]
 
 

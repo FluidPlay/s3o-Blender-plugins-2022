@@ -471,11 +471,56 @@ def apply_modifiers(obj):
 	for m in obj.modifiers:
 		obj.modifiers.remove(m)
 
+def remove_base_plate(obj, z_threshold):
+	if obj.type != 'MESH':
+		return
+
+	def are_triangles_adjacent(tri1, tri2):
+		try:
+			common_verts = set(tri1.verts) & set(tri2.verts)
+		except ReferenceError:
+			return False
+
+		return len(common_verts) == 2
+
+	def is_horizontal_face(face):
+		# Check if the angle is within the specified threshold
+		return 0 <= math.degrees(face.normal.angle((0, 0, -1))) <= 10.0
+
+	obj.select_set(state=True)
+	bpy.context.view_layer.objects.active = obj
+	bpy.ops.object.mode_set(mode='EDIT')
+	mesh = bmesh.from_edit_mesh(obj.data)
+
+	# Iterate through all faces in the BMesh
+	for face1 in mesh.faces:
+		if len(face1.verts) == 4: # GL_QUADS - should never come here
+			angles = [v.co.angle(face1.calc_center_median() - v.co, use_sign=True) for v in face1.verts]
+			if all(abs(angle) == radians(45) for angle in angles):
+				if is_horizontal_face(face1):
+					bmesh.ops.delete(mesh, geom=[face1], context='FACES')
+					return
+
+		# Check if the face1 is a triangle
+		if len(face1.verts) == 3: # GL_TRIANGLES
+			if not is_horizontal_face(face1):
+				continue
+
+			for face2 in mesh.faces:
+				# Check if the face2 is a triangle and shares two vertices with face1
+				if is_horizontal_face(face2) and are_triangles_adjacent(face1, face2):
+					bmesh.ops.delete(mesh, geom=[face1, face2], context='FACES')
+					return
+
+	bmesh.update_edit_mesh(obj.data)
+	bpy.ops.object.mode_set(mode='OBJECT')
+
 
 def save_s3o_file(s3o_filename,
 				  context,
 				  use_selection=False,
 				  use_mesh_modifiers=False,
+				  use_remove_base_plate=False,
 				  use_triangles=False,
 				  remove_suffix=True,
 				  texture1_name="corota_tex1.dds",  #"texture1.dds",
@@ -637,6 +682,9 @@ def save_s3o_file(s3o_filename,
 			bmesh.update_edit_mesh(mesh) #, True
 			bpy.ops.object.mode_set(mode='OBJECT')
 
+		if use_remove_base_plate:
+			remove_base_plate(obj, 0.01)
+
 		piece = s3o_piece()
 		#########################################
 		# go through all mesh objects and empties, then convert them to s3o_pieces and set origins (as offsets)
@@ -742,6 +790,12 @@ class ExportS3O(bpy.types.Operator, ExportHelper):
 		default=True,
 	)
 
+	use_remove_base_plate: BoolProperty(
+		name="Remove base plate",
+		description="Removes base plate",
+		default=False,
+	)
+
 	use_triangles: BoolProperty(            # convert_to_tris
 		name="Convert quads to triangles",
 		description="Convert the mesh's quads and n-gons to triangles",
@@ -811,9 +865,11 @@ class ExportS3O(bpy.types.Operator, ExportHelper):
 			bpy.ops.object.select_all(action="DESELECT")
 
 		# # ====== Actually export the s3o file
-		save_s3o_file( self.filepath, context,
+		save_s3o_file( self.filepath,
+					context,
 					self.use_selection,
 					self.use_mesh_modifiers,
+					self.use_remove_base_plate,
 					self.use_triangles,
 					self.remove_suffix,
 					self.texture1_name,
