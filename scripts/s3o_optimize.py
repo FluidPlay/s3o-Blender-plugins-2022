@@ -13,7 +13,7 @@ def find_obj():
         if 'SpringRadius' in obj.name or 'SpringHeight' in obj.name:
             continue
 
-        if obj.parent == None and (obj.type == 'EMPTY' or obj.type == 'MESH'):
+        if obj.parent is None and (obj.type == 'EMPTY' or obj.type == 'MESH'):
             return obj
 
     return None
@@ -47,7 +47,7 @@ def convert(par_filename : str):
     ):
         #
         # Import
-        context = bpy.context;
+        context = bpy.context
         if context.mode != "OBJECT":
             if not context.scene.objects.active:
                 context.scene.objects.active = context.scene.objects[0]
@@ -62,7 +62,7 @@ def convert(par_filename : str):
         #
         # Save
         my_obj = find_obj()
-        if my_obj == None:
+        if my_obj is None:
             raise Exception("No object found")
         
         texture1_name = "texture1.dds"

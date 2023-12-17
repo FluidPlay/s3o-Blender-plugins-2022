@@ -1,10 +1,7 @@
 import bmesh
 import bpy
-from bpy import context
 import math
-import mathutils
 from mathutils import Matrix
-from mathutils import Vector
 import time
 from bpy.props import BoolProperty, StringProperty  # , EnumProperty
 import os
@@ -18,7 +15,6 @@ import itertools
 # import BPyImage ==> bpy.ops.image
 # import BPyMessages ==> bpy.msgbus ?
 # ImportHelper is a helper class, defines filename and invoke() function which calls the file selector
-from bpy_extras.io_utils import ExportHelper, orientation_helper, axis_conversion
 
 # from Blender import Mesh, Object, Material, Image, Texture, Lamp, Mathutils, Window
 # from Blender.Mathutils import Vector
@@ -535,7 +531,6 @@ def save_s3o_file(s3o_filename,
 			if objs is None or len(objs) < 1:
 				objs = bpy.context.scene.objects
 
-			points_co_global = []
 			print("Amount of objects: " + str(len(objs)))
 
 			# for this_obj in obj:
@@ -609,16 +604,6 @@ def save_s3o_file(s3o_filename,
 		  + ", Texture1 Name: " + str(texture1_name)
 		  + ", Texture2 Name: " + str(texture2_name)
 	      )
-
-	objdir = os.path.dirname(s3o_filename)
-	rootdir = folder_root(objdir, "objects3d")
-
-	# # OBSOLETE: There are two string fields on the exporter to set texture names now
-	# texsdir = ""
-	# if rootdir is None:
-	# 	texsdir = objdir
-	# else:
-	# 	texsdir = os.path.join(rootdir, find_in_folder(rootdir, 'unittextures'))
 
 	header = s3o_header()
 
@@ -842,14 +827,14 @@ class ExportS3O(bpy.types.Operator, ExportHelper):
 			if 'SpringHeight' in obj.name:
 				continue
 
-			if obj.parent == None and (obj.type == 'EMPTY' or obj.type == 'MESH'):
+			if obj.parent is None and (obj.type == 'EMPTY' or obj.type == 'MESH'):
 				my_obj = obj
 				break
 
-		if my_obj == None:
+		if my_obj is None:
 			raise Exception("No object found")
 
-		if my_obj != None:
+		if my_obj is not None:
 			if self.texture1_name == "texture1.dds" and "s3o_texture1" in my_obj:
 				self.texture1_name = my_obj["s3o_texture1"]
 			if self.texture2_name == "texture2.dds" and "s3o_texture2" in my_obj:
@@ -878,7 +863,7 @@ class ExportS3O(bpy.types.Operator, ExportHelper):
 
 		bpy.ops.object.select_all(action="DESELECT")
 
-		if my_obj != None:
+		if my_obj is not None:
 			my_obj["s3o_texture1"] = self.texture1_name
 			my_obj["s3o_texture2"] = self.texture2_name
 

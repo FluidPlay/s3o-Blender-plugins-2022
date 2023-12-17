@@ -1,4 +1,14 @@
 #!BPY
+import bpy
+import bmesh
+from mathutils import Vector
+# ImportHelper is a helper class, defines filename and invoke() function which calls the file selector
+from bpy_extras.io_utils import ImportHelper
+
+import os
+import struct
+
+
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
@@ -25,18 +35,6 @@ bl_info = {
     "support": "COMMUNITY",
     "category": "Import-Export",
 }
-
-import bpy, bmesh
-from mathutils import Vector
-# ImportHelper is a helper class, defines filename and invoke() function which calls the file selector
-from bpy_extras.io_utils import ImportHelper
-
-import os
-import sys
-import math
-import struct
-from struct import calcsize, unpack
-
 
 try:
     os.SEEK_SET
