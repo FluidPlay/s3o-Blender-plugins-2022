@@ -1,4 +1,14 @@
 #!BPY
+import bpy
+import bmesh
+from mathutils import Vector
+# ImportHelper is a helper class, defines filename and invoke() function which calls the file selector
+from bpy_extras.io_utils import ImportHelper
+
+import os
+import struct
+
+
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
@@ -16,8 +26,8 @@ bl_info = {
     "name": "Import Spring S3O (.s3o)",
     "author": "Jez Kabanov and Jose Luis Cercos-Pita <jlcercos@gmail.com> and Darloth",
     "version": (0, 7, 2),
-    "blender": (2, 80, 0),
-    "location": "File > Import > Spring S3O (.s3o)",
+    "blender": (3, 6, 0),
+    "location": "File > Import > Spring (.s3o)",
     "description": "Import a file in the Spring S3O format",
     "warning": "",
     "wiki_url": "https://springrts.com/wiki/Assimp",
@@ -25,18 +35,6 @@ bl_info = {
     "support": "COMMUNITY",
     "category": "Import-Export",
 }
-
-import bpy, bmesh
-from mathutils import Vector
-# ImportHelper is a helper class, defines filename and invoke() function which calls the file selector
-from bpy_extras.io_utils import ImportHelper
-
-import os
-import sys
-import math
-import struct
-from struct import calcsize, unpack
-
 
 try:
     os.SEEK_SET
@@ -84,6 +82,8 @@ def folder_root(folder, name):
     index = folder.lower().find(name.lower())
     if index == -1:
         return None
+    if index == 0:
+        return os.getcwd()
     return folder[:index]
 
 
@@ -221,7 +221,7 @@ class s3o_piece(object):
     yoffset = 0.0
     zoffset = 0.0
 
-    def load(self, fhandle, offset, material):
+    def load(self, fhandle, offset, material, tex1 : str = "", tex2 : str = ""):
         fhandle.seek(offset, os.SEEK_SET)
         tmp_data = fhandle.read(struct.calcsize(self.binary_format))
         data = struct.unpack(self.binary_format, tmp_data)
@@ -280,8 +280,9 @@ class s3o_piece(object):
 
         # if it has no verts or faces create an EMPTY instead
         if(self.numVerts == 0):
+            existing_objects = bpy.data.objects[:]
             bpy.ops.object.empty_add(type="PLAIN_AXES", location=(0, 0, 0))
-            self.ob = bpy.context.active_object
+            self.ob = set(bpy.data.objects).difference(existing_objects).pop()            
             self.ob.name = self.name
         else:
             bm = bmesh.new()
@@ -293,6 +294,8 @@ class s3o_piece(object):
                 try:
                     bm.faces.new([bm.verts[self.vertids[i]] for i in f])
                 except ValueError:
+                    pass
+                except IndexError:
                     pass
                 bm.faces.ensure_lookup_table()
                 uv_layer = bm.loops.layers.uv.verify()
@@ -325,11 +328,10 @@ class s3o_piece(object):
             except AttributeError:
                 # Blender < 2.80
                 bpy.context.scene.objects.active = self.ob                
-            if bpy.context.object is not None: # NoneType objects can get here recently.
-                #bpy.ops.object.shade_smooth()
-                if hasattr(bpy.context.object.data, "use_auto_smooth"):
-                    bpy.context.object.data.use_auto_smooth = False
-                    # bpy.context.object.data.auto_smooth_angle = 0.785398 # 45 degrees, better than 30 for low poly stuff.
+
+            if hasattr(self.ob, "use_auto_smooth"):
+                self.ob.use_auto_smooth = False
+                # bpy.context.object.data.auto_smooth_angle = 0.785398 # 45 degrees, better than 30 for low poly stuff.
 
             matidx = len(self.ob.data.materials)
             self.ob.data.materials.append(material) 
@@ -337,6 +339,10 @@ class s3o_piece(object):
             for face in self.mesh.polygons:
                 face.material_index = matidx
     
+        if tex1 != "" and tex2 != "":
+            self.ob["s3o_texture1"] = tex1
+            self.ob["s3o_texture2"] = tex2
+
         if(self.parent):
             self.ob.parent = self.parent.ob
         self.ob.location = [self.xoffset, self.yoffset, self.zoffset]
@@ -433,6 +439,10 @@ def new_material(tex1, tex2, texsdir, name="Material"):
 
     mat = bpy.data.materials.new(name=name + '.mat')
     mat.use_nodes = True
+    
+    # shader_mix = mat.node_tree.nodes.new("ShaderNodeMixShader")
+    # input_group = mat.node_tree.nodes.new('NodeGroupInput')
+
     principled = mat.node_tree.nodes["Principled BSDF"]
     principled.inputs['Base Color'].default_value = (1.0, 1.0, 1.0, 1.0)
     if(tex1 or tex2):
@@ -482,21 +492,21 @@ def new_material(tex1, tex2, texsdir, name="Material"):
         # add RGB separation node and hook up associated channels and alpha channel.  
         # R is emission, G is reflectivity (inverse roughness) and 
         # B is undefined by default.
-        split_rgb_node = mat.node_tree.nodes.new('ShaderNodeSeparateRGB')
-        mat.node_tree.links.new(split_rgb_node.inputs['Image'], tex_node.outputs['Color'])
+        # split_rgb_node = mat.node_tree.nodes.new('ShaderNodeSeparateRGB')
+        # mat.node_tree.links.new(split_rgb_node.inputs['Image'], tex_node.outputs['Color'])
         
-        mat.node_tree.links.new(principled.inputs['Emission'], split_rgb_node.outputs['R'])
+        # mat.node_tree.links.new(principled.inputs['Emission'], split_rgb_node.outputs['R'])
         
-        inverter_node = mat.node_tree.nodes.new('ShaderNodeInvert')
-        mat.node_tree.links.new(principled.inputs['Roughness'], inverter_node.outputs['Color'])
-        mat.node_tree.links.new(inverter_node.inputs['Color'], split_rgb_node.outputs['G'])
+        # inverter_node = mat.node_tree.nodes.new('ShaderNodeInvert')
+        # mat.node_tree.links.new(principled.inputs['Roughness'], inverter_node.outputs['Color'])
+        # mat.node_tree.links.new(inverter_node.inputs['Color'], split_rgb_node.outputs['G'])
         
-        mat.node_tree.links.new(tex_node.inputs['Vector'], mapping_node.outputs['Vector'])
+        # mat.node_tree.links.new(tex_node.inputs['Vector'], mapping_node.outputs['Vector'])
     return mat
 
 
-def load_s3o_file(s3o_filename, context, BATCH_LOAD=False):
-    basename = os.path.basename(s3o_filename)
+def load_s3o_file(s3o_filename, BATCH_LOAD=False):
+    basename = os.path.splitext(os.path.basename(s3o_filename))[0]
     objdir = os.path.dirname(s3o_filename)
     rootdir = folder_root(objdir, "objects3d")
     if rootdir is None:
@@ -512,17 +522,22 @@ def load_s3o_file(s3o_filename, context, BATCH_LOAD=False):
     mat = new_material(header.texture1, header.texture2, texsdir, name=basename)
 
     rootPiece = s3o_piece()
-    rootPiece.load(fhandle, header.rootPieceOffset, mat)
+    rootPiece.load(fhandle, header.rootPieceOffset, mat, header.texture1, header.texture2)
 
     # create collision sphere
+    existing_objects = bpy.data.objects[:]
     bpy.ops.object.empty_add(type="SPHERE",
                              location=(header.midx, header.midz, header.midy),
                              radius=header.radius)
-    bpy.context.active_object.name = basename + '.SpringRadius'
+    new_object = set(bpy.data.objects).difference(existing_objects).pop()
+    new_object.name = basename + '.SpringRadius'
+
+    existing_objects = bpy.data.objects[:]
     bpy.ops.object.empty_add(type="ARROWS",
                              location=(header.midx, header.midz, header.midy),
                              radius=10.0)
-    bpy.context.active_object.name = basename + '.SpringHeight'
+    new_object = set(bpy.data.objects).difference(existing_objects).pop()
+    new_object.name = basename + '.SpringRadius'
 
     fhandle.close()
     return
@@ -551,7 +566,7 @@ class ImportS3O(bpy.types.Operator, ImportHelper):
             bpy.ops.object.mode_set(mode="OBJECT")
         bpy.ops.object.select_all(action="DESELECT")
         
-        load_s3o_file(self.filepath, context)
+        load_s3o_file(self.filepath)
         
         bpy.ops.object.select_all(action="DESELECT")
         return {"FINISHED"}
@@ -559,7 +574,7 @@ class ImportS3O(bpy.types.Operator, ImportHelper):
 
 # Only needed if you want to add into a dynamic menu
 def menu_func_import(self, context):
-    self.layout.operator(ImportS3O.bl_idname, text="Spring ZY(.s3o)")
+    self.layout.operator(ImportS3O.bl_idname, text="Spring (.s3o)")
 
 
 def register():

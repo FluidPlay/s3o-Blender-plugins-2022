@@ -1,10 +1,7 @@
 import bmesh
 import bpy
-from bpy import context
 import math
-import mathutils
 from mathutils import Matrix
-from mathutils import Vector
 import time
 from bpy.props import BoolProperty, StringProperty  # , EnumProperty
 import os
@@ -18,7 +15,6 @@ import itertools
 # import BPyImage ==> bpy.ops.image
 # import BPyMessages ==> bpy.msgbus ?
 # ImportHelper is a helper class, defines filename and invoke() function which calls the file selector
-from bpy_extras.io_utils import ExportHelper, orientation_helper, axis_conversion
 
 # from Blender import Mesh, Object, Material, Image, Texture, Lamp, Mathutils, Window
 # from Blender.Mathutils import Vector
@@ -27,8 +23,8 @@ bl_info = {
 	"name": "Export Spring S3O Object (.s3o)",
 	"author": "Jez Kabanov and Breno 'MaDDoX' Azevedo <jlcercos@gmail.com> and <maddox.br@gmail.com>",
 	"version": (0, 7, 1),
-	"blender": (3, 10, 0),
-	"location": "File > Export > Spring S3O Object (.s3o)",
+	"blender": (3, 6, 0),
+	"location": "File > Export > Spring (.s3o)",
 	"description": "Exports a file in the Spring S3O format",
 	"warning": "",
 	"wiki_url": "https://springrts.com/wiki/About_s3o",
@@ -351,71 +347,69 @@ def ProcessPiece(piece, scene):  # Empty or Mesh, will recurse through children
 	# For 3D meshes, export the geometry
 	#########################################
 	if obj.type == 'MESH':
+		obj.select_set(state=True)
 		bpy.context.view_layer.objects.active = obj
-		mesh = obj.data
 
+		mesh = obj.data
 		mesh.update()
-		# bpy.ops.object.mode_set(mode='EDIT')
-		# bmesh.update_edit_mesh(mesh)  # , True
-		# bpy.ops.object.mode_set(mode='OBJECT')
 
 		# Split polygons by UV islands (to prevent the shared/synced UVs issue in S3Os)
 		# From: https://blender.stackexchange.com/questions/73647/python-bmesh-for-loop-breaking-trying-to-split-mesh-via-uv-islands
-		if SPLIT_UVS:
-			bpy.ops.object.mode_set(mode='EDIT')
-			bm = bmesh.from_edit_mesh(mesh)
-			bm.select_mode = {'FACE'}
-			faceGroups = []
-			bpy.ops.mesh.select_mode(use_extend=False, use_expand=False, type='FACE')
-			save_sync = scene.tool_settings.use_uv_select_sync
-			scene.tool_settings.use_uv_select_sync = True
-			faces = set(bm.faces[:])
-			while faces:
-				bpy.ops.mesh.select_all(action='DESELECT')
-				face = faces.pop()
-				face.select = True
-				bpy.ops.uv.select_linked()
-				selected_faces = {f for f in faces if f.select}
-				selected_faces.add(face)  # this or bm.faces above?
-				faceGroups.append(selected_faces)
-				faces -= selected_faces
-			scene.tool_settings.use_uv_select_sync = save_sync
-			for g in faceGroups:
-				bpy.ops.mesh.select_all(action='DESELECT')
-				for f in g:
-					f.select = True
-				bpy.ops.mesh.split()
-			mesh.update()
-			bpy.ops.object.mode_set(mode='OBJECT')
-
-			#### Optional algorithm, experiments only
+		if SPLIT_UVS and len(obj.data.uv_layers):
 			# bpy.ops.object.mode_set(mode='EDIT')
 			# bm = bmesh.from_edit_mesh(mesh)
-			# # old seams
-			# old_seams = [e for e in bm.edges if e.seam]
-			# # unmark
-			# for e in old_seams:
-			# 	e.seam = False
-			# # mark seams from uv islands
-			# bpy.ops.mesh.select_all(action='SELECT')  # NEW LINE!!!
-			# bpy.ops.uv.select_all(action='SELECT')  # NEW LINE!!!
-			# bpy.ops.uv.seams_from_islands()
-			# seams = [e for e in bm.edges if e.seam]
-			# # split on seams
-			# bmesh.ops.split_edges(bm, edges=seams)
-			# # re instate old seams.. could clear new seams.
-			# for e in old_seams:
-			# 	e.seam = True
-			# bmesh.update_edit_mesh(mesh)
+			# bm.select_mode = {'FACE'}
+			# faceGroups = []
+			# bpy.ops.mesh.select_mode(use_extend=False, use_expand=False, type='FACE')
+			# save_sync = scene.tool_settings.use_uv_select_sync
+			# scene.tool_settings.use_uv_select_sync = True
+			# faces = set(bm.faces[:])
+			# while faces:
+			# 	bpy.ops.mesh.select_all(action='DESELECT')
+			# 	face = faces.pop()
+			# 	face.select = True
+				
+			# 	bpy.ops.uv.select_linked()
 
-		# piece.verts = []
-		# piece.polygons = []
-		if not len(obj.data.uv_layers):
-			print("UV coordinates not found! Did you unwrap this object?") # Auto-unwrapping.")
-			#TODO: Auto-unwrap to avoid errors
+			# 	selected_faces = {f for f in faces if f.select}
+			# 	selected_faces.add(face)  # this or bm.faces above?
+			# 	faceGroups.append(selected_faces)
+			# 	faces -= selected_faces
+			# 	scene.tool_settings.use_uv_select_sync = save_sync
+			# 	for g in faceGroups:
+			# 		bpy.ops.mesh.select_all(action='DESELECT')
+			# 		for f in g:
+			# 			f.select = True
+			# 		bpy.ops.mesh.split()
+
+			# mesh.update()
 			# bpy.ops.object.mode_set(mode='OBJECT')
-			# bpy.ops.uv.smart_project()
-		else:
+
+			#### Optional algorithm, experiments only
+			try:
+				bpy.ops.object.mode_set(mode='EDIT')
+				bm = bmesh.from_edit_mesh(mesh)
+				# old seams
+				old_seams = [e for e in bm.edges if e.seam]
+				# unmark
+				for e in old_seams:
+					e.seam = False
+				# mark seams from uv islands
+				bpy.ops.mesh.select_all(action='SELECT')  # NEW LINE!!!
+				bpy.ops.uv.select_all(action='SELECT')   # NEW LINE!!!
+				bpy.ops.uv.seams_from_islands()
+				seams = [e for e in bm.edges if e.seam]
+				# split on seams
+				bmesh.ops.split_edges(bm, edges=seams)
+				# re instate old seams.. could clear new seams.
+				for e in old_seams:
+					e.seam = True
+				bmesh.update_edit_mesh(mesh)
+				bpy.ops.object.mode_set(mode='OBJECT')
+			except RuntimeError:
+				# Happens on: bpy.ops.uv.select_all(action='SELECT'), not sure why.
+				pass
+
 			mesh.calc_loop_triangles()
 			uv_layer = mesh.uv_layers.active.data
 
@@ -429,9 +423,9 @@ def ProcessPiece(piece, scene):  # Empty or Mesh, will recurse through children
 				vert.xpos = -v.co.x # v_co.x # + objLoc[0][0]
 				vert.ypos = v.co.z # v_co.y # + objLoc[1][0]
 				vert.zpos = v.co.y # v_co.z # + objLoc[2][0] # piece.zoffset
-				vert.xnormal = v.normal.x
-				vert.ynormal = v.normal.y
-				vert.znormal = v.normal.z
+				vert.xnormal = -v.normal.x
+				vert.ynormal = v.normal.z
+				vert.znormal = v.normal.y
 				piece.verts.append(vert)
 			print("Exported " + str(len(piece.verts)) + " verts")
 			# # Merge Back (that'd be only for poly export really)
@@ -473,11 +467,56 @@ def apply_modifiers(obj):
 	for m in obj.modifiers:
 		obj.modifiers.remove(m)
 
+def remove_base_plate(obj, z_threshold):
+	if obj.type != 'MESH':
+		return
+
+	def are_triangles_adjacent(tri1, tri2):
+		try:
+			common_verts = set(tri1.verts) & set(tri2.verts)
+		except ReferenceError:
+			return False
+
+		return len(common_verts) == 2
+
+	def is_horizontal_face(face):
+		# Check if the angle is within the specified threshold
+		return 0 <= math.degrees(face.normal.angle((0, 0, -1))) <= 10.0
+
+	obj.select_set(state=True)
+	bpy.context.view_layer.objects.active = obj
+	bpy.ops.object.mode_set(mode='EDIT')
+	mesh = bmesh.from_edit_mesh(obj.data)
+
+	# Iterate through all faces in the BMesh
+	for face1 in mesh.faces:
+		if len(face1.verts) == 4: # GL_QUADS - should never come here
+			angles = [v.co.angle(face1.calc_center_median() - v.co, use_sign=True) for v in face1.verts]
+			if all(abs(angle) == radians(45) for angle in angles):
+				if is_horizontal_face(face1):
+					bmesh.ops.delete(mesh, geom=[face1], context='FACES')
+					return
+
+		# Check if the face1 is a triangle
+		if len(face1.verts) == 3: # GL_TRIANGLES
+			if not is_horizontal_face(face1):
+				continue
+
+			for face2 in mesh.faces:
+				# Check if the face2 is a triangle and shares two vertices with face1
+				if is_horizontal_face(face2) and are_triangles_adjacent(face1, face2):
+					bmesh.ops.delete(mesh, geom=[face1, face2], context='FACES')
+					return
+
+	bmesh.update_edit_mesh(obj.data)
+	bpy.ops.object.mode_set(mode='OBJECT')
+
 
 def save_s3o_file(s3o_filename,
 				  context,
 				  use_selection=False,
 				  use_mesh_modifiers=False,
+				  use_remove_base_plate=False,
 				  use_triangles=False,
 				  remove_suffix=True,
 				  texture1_name="corota_tex1.dds",  #"texture1.dds",
@@ -492,7 +531,6 @@ def save_s3o_file(s3o_filename,
 			if objs is None or len(objs) < 1:
 				objs = bpy.context.scene.objects
 
-			points_co_global = []
 			print("Amount of objects: " + str(len(objs)))
 
 			# for this_obj in obj:
@@ -567,16 +605,6 @@ def save_s3o_file(s3o_filename,
 		  + ", Texture2 Name: " + str(texture2_name)
 	      )
 
-	objdir = os.path.dirname(s3o_filename)
-	rootdir = folder_root(objdir, "objects3d")
-
-	# # OBSOLETE: There are two string fields on the exporter to set texture names now
-	# texsdir = ""
-	# if rootdir is None:
-	# 	texsdir = objdir
-	# else:
-	# 	texsdir = os.path.join(rootdir, find_in_folder(rootdir, 'unittextures'))
-
 	header = s3o_header()
 
 	scene = context.scene  # Blender.Scene.GetCurrent()
@@ -639,6 +667,9 @@ def save_s3o_file(s3o_filename,
 			bmesh.ops.triangulate(bm, faces=bm.faces[:], quad_method='BEAUTY', ngon_method='BEAUTY')
 			bmesh.update_edit_mesh(mesh) #, True
 			bpy.ops.object.mode_set(mode='OBJECT')
+
+		if use_remove_base_plate:
+			remove_base_plate(obj, 0.01)
 
 		piece = s3o_piece()
 		#########################################
@@ -747,6 +778,12 @@ class ExportS3O(bpy.types.Operator, ExportHelper):
 		default=True,
 	)
 
+	use_remove_base_plate: BoolProperty(
+		name="Remove base plate",
+		description="Removes base plate",
+		default=False,
+	)
+
 	use_triangles: BoolProperty(            # convert_to_tris
 		name="Convert quads to triangles",
 		description="Convert the mesh's quads and n-gons to triangles",
@@ -786,6 +823,25 @@ class ExportS3O(bpy.types.Operator, ExportHelper):
 		print("#### Begin Export ####")
 		print("######################\n")
 
+		my_obj = None
+		for obj in bpy.data.objects:
+			if 'SpringRadius' in obj.name:
+				continue
+			if 'SpringHeight' in obj.name:
+				continue
+
+			if obj.parent is None and (obj.type == 'EMPTY' or obj.type == 'MESH'):
+				my_obj = obj
+				break
+
+		if my_obj is None:
+			raise Exception("No object found")
+
+		if my_obj is not None:
+			if self.texture1_name == "texture1.dds" and "s3o_texture1" in my_obj:
+				self.texture1_name = my_obj["s3o_texture1"]
+			if self.texture2_name == "texture2.dds" and "s3o_texture2" in my_obj:
+				self.texture2_name = my_obj["s3o_texture2"]
 
 		# setting active object if there is no active object
 		if context.mode != "OBJECT":
@@ -797,16 +853,22 @@ class ExportS3O(bpy.types.Operator, ExportHelper):
 			bpy.ops.object.select_all(action="DESELECT")
 
 		# # ====== Actually export the s3o file
-		save_s3o_file( self.filepath, context,
-		               self.use_selection,
-		               self.use_mesh_modifiers,
-		               self.use_triangles,
-					   self.remove_suffix,
-					   self.texture1_name,
-					   self.texture2_name
-		               )
+		save_s3o_file( self.filepath,
+					context,
+					self.use_selection,
+					self.use_mesh_modifiers,
+					self.use_remove_base_plate,
+					self.use_triangles,
+					self.remove_suffix,
+					self.texture1_name,
+					self.texture2_name
+					)
 
 		bpy.ops.object.select_all(action="DESELECT")
+
+		if my_obj is not None:
+			my_obj["s3o_texture1"] = self.texture1_name
+			my_obj["s3o_texture2"] = self.texture2_name
 
 		print("\n######################")
 		print("Ding! Export Complete in %s seconds" % (time.time() - start_time))
