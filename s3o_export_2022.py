@@ -831,6 +831,10 @@ class ExportS3O(bpy.types.Operator, ExportHelper):
 			if 'SpringHeight' in obj.name:
 				continue
 
+			## Support for rigged meshes
+			if my_obj is None and (obj.type == 'EMPTY' or obj.type == 'MESH'):
+				my_obj = obj
+
 			if obj.parent is None and (obj.type == 'EMPTY' or obj.type == 'MESH'):
 				my_obj = obj
 				break
