@@ -4,6 +4,7 @@ import math
 from mathutils import Matrix
 import time
 from bpy.props import BoolProperty, StringProperty  # , EnumProperty
+from bpy_extras.io_utils import ExportHelper
 import os
 import struct
 from math import radians
